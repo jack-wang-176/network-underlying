@@ -33,7 +33,7 @@ int main(int argc ,char const*argv[]){
     }
 
     
-    struct sockaddr_in local_addr; // 建议改个名字，叫 send 容易混淆
+    struct sockaddr_in local_addr; 
     memset(&local_addr, 0, sizeof(local_addr));
     local_addr.sin_family = AF_INET;
     
