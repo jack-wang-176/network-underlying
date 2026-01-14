@@ -409,9 +409,9 @@ struct ip_mreq
     ```
 
   *  **Connect 的底层机制 (三次握手触发器)**：
-   * 当调用 `connect` 时，内核会向 Server 发送一个 **SYN** 包。
-   * 此时函数处于阻塞状态，等待 Server 回复 **SYN+ACK**。
-   * 收到回复后，Client 再发送一个 **ACK**，此时连接建立 (ESTABLISHED)，函数返回 0。
+     1.  当调用 `connect` 时，内核会向 Server 发送一个 **SYN** 包。
+     2. 此时函数处于阻塞状态，等待 Server 回复 **SYN+ACK**。
+     3. 收到回复后，Client 再发送一个 **ACK**，此时连接建立 (ESTABLISHED)，函数返回 0。
 
 
    * 在 client 这一方通常只需要维护一个 socket，建立连接后，内核已经把这个 socket 绑定到了特定的远端 IP 和端口，所以 `send` 函数不需要像 `sendto` 那样重复指定目标地址。
@@ -436,7 +436,7 @@ struct ip_mreq
     ```
 
   * `__fd`: 之前创建的套接字文件描述符。
-  * `__n`: **Backlog (积压队列长度)**。
+  * `__n`: **Backlog (积压队列长度)**
   * **为什么需要 Listen**：
   * 内核为监听套接字维护了两个队列：**半连接队列** (收到 SYN 但没收到最终 ACK) 和 **全连接队列** (三次握手完成等待 Accept 取走)。
   * `__n` 实际上决定了这些队列（通常是全连接队列）的大小。如果队列满了，新的连接请求就会被直接丢弃或拒绝（SYN Flood 攻击也是针对这里）。
@@ -454,7 +454,7 @@ extern int accept (int __fd, __SOCKADDR_ARG __addr,
 
 * **两个 FD 的故事**：
 * `accept` 返回的 `int` 是一个**全新的文件描述符** (Connected Socket)。
-* **设计哲学**：原来的 `sockfd` 是“门迎”，只负责把人领进门；`accept` 返回的 `fd` 是“服务员”，专门负责这一桌的通信。这种分离设计使得 TCP Server 可以同时处理握手请求和数据传输。
+* **设计哲学**：原来的 `sockfd` 只负责把人领进门；`accept` 返回的 `fd` 专门负责这一桌的通信。这种分离设计使得 TCP Server 可以同时处理握手请求和数据传输。
 
 
 * **Recv 的返回值判断**：
@@ -469,6 +469,7 @@ extern ssize_t recv (int __fd, void *__buf, size_t __n, int __flags);
 * `> 0`: 接收到的字节数。
 * `= 0`: **重要！** 这代表对端关闭了连接 (FIN 包)。TCP 是全双工的，0 字节读意味着 Read 通道关闭。
 * `< 0`: 出错 (Error)，需要检查 errno。
+* 而在dup中可以直接发送长度为0的数据包
 
 
 * **summary (CS Framework)**
@@ -564,7 +565,6 @@ extern int pthread_create (pthread_t *__restrict __newthread,
 
 ```bash
 gcc server_thread.c -o server -lpthread
-
 ```
 
 
@@ -573,11 +573,10 @@ gcc server_thread.c -o server -lpthread
 
 ```c
 pthread_detach(pthread_self());
-
 ```
 
 
-* **原理**：默认情况下线程是 `joinable` 的，退出后需要主线程调用 `pthread_join` 来“收尸”。调用 `detach` 是告诉内核：“这个线程也是个打工人的命，死了直接埋了就行”，内核会在线程退出时自动释放其栈空间和资源，无需主线程操心。
+* **原理**：默认情况下线程是 `joinable` 的，退出后需要主线程调用 `pthread_join` 来“收尸”。调用 `detach` 是告诉内核：“这个线程也是个普通打工人，死了直接埋了就行”，内核会在线程退出时自动释放其栈空间和资源，无需主线程操心。
 
 
 * **05_server_noblock.c**
@@ -592,7 +591,6 @@ fcntl(sockfd, F_SETFL, flag | O_NONBLOCK, 0);
 
 ```
 
-
 * **位运算图解**：
 * `fcntl` 通过位掩码来管理状态。
 * `flag` (假设): `0000 0010` (代表已有的属性)
@@ -605,15 +603,12 @@ fcntl(sockfd, F_SETFL, flag | O_NONBLOCK, 0);
 * 此时必须检查 `errno`。如果 `errno == EAGAIN` (Try again) 或 `EWOULDBLOCK`，说明**“现在没数据，不是出错了，待会再来”**。这使得程序可以在没数据时去干别的事。
 
 
-
-
 * **06_server_epoll.c**
 * **Epoll**: Linux 下最高效的 IO 多路复用器。它解决了 `select/poll` 轮询所有 socket 效率低下的问题。
 
 
 ```c
 extern int epoll_create1 (int __flags) __THROW;
-
 ```
 
 
@@ -625,7 +620,6 @@ struct epoll_event {
     uint32_t events;  /* Epoll events */
     epoll_data_t data; /* User data variable */
 } __EPOLL_PACKED;
-
 ```
 
 
@@ -634,10 +628,8 @@ struct epoll_event {
 * `EPOLLIN`: 有数据可读 (包括新连接)。
 * `EPOLLET`: **边缘触发 (Edge Triggered)**。数据这就只有一次通知，没读完下次不提醒（高效但难写）。默认是 **LT (Level Triggered)**，没读完一直提醒。
 
-
+* `data`:data里面有多种数据结构，这里我们使用文件描述符
 * `data.fd`: 记录是哪个 socket 发生了事件。
-
-
 
 
 ```c
@@ -664,7 +656,7 @@ extern int epoll_wait (int __epfd, struct epoll_event *__events,
 
 * **Event Loop 逻辑**：
 * `epoll_wait` 阻塞等待，一旦有 socket 就绪，它会将这就绪的 socket 填入 `__events` 数组并返回数量 `n`。
-* **O(1) 复杂度**：我们只需要遍历这 `n` 个活跃的 socket，而不需要遍历所有 10000 个 socket。
+* 我们只需要遍历这 `n` 个活跃的 socket，而不需要遍历所有 10000 个 socket。
 * **分流处理**：
 * 如果 `events[i].data.fd == listen_fd`: 说明有新连接 -> 调用 `accept` -> `epoll_ctl(ADD)` 加入监控。
 * 否则: 说明是已连接的客户端发数据了 -> 调用 `recv/send` 处理业务。
@@ -676,4 +668,4 @@ extern int epoll_wait (int __epfd, struct epoll_event *__events,
 
 * **adding**
 * **总结**：Epoll 用单线程实现了高并发，避免了多线程频繁切换上下文的开销 (Context Switch)。但如果业务逻辑非常耗时（比如计算密集型），单线程会被卡死。
-* **Go 的伏笔**：Go 语言的 Goroutine 实际上就是将“多线程的易用性”和“Epoll 的高性能”结合了起来——底层用 Epoll 监听，上层用轻量级协程伪装成阻塞 IO，我们将在后续章节看到这种天才般的设计。
+* **Go 的伏笔**：Go 语言的 Goroutine 实际上就是将“多线程的易用性”和“Epoll 的高性能”结合了起来——底层用 Epoll 监听，上层用轻量级协程伪装成阻塞 IO，我们将在后续部分看到这种天才般的设计。
