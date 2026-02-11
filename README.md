@@ -653,3 +653,57 @@ recvfrom(Echo)
 * **adding**
   * **总结**：Epoll 用单线程实现了高并发，避免了多线程频繁切换上下文的开销 (Context Switch)。但如果业务逻辑非常耗时（比如计算密集型），单线程会被卡死。
   * **Go 的伏笔**：Go 语言的 Goroutine 实际上就是将“多线程的易用性”和“Epoll 的高性能”结合了起来——底层用 Epoll 监听，上层用轻量级协程伪装成阻塞 IO，我们将在后续部分看到这种天才般的设计。
+
+  ## **webcoding on go sdk**
+
+  ### **the goal of this part**
+  * 在上一节中，我们看到了c语言中netpoll的实现，在这一节，我们将去探讨go中netpoll的应用和巧妙设计，不过在此之前，我强烈建议你去观看[Core Dumped](https://www.youtube.com/watch?v=7ge7u5VUSbE)的系列视频，来补充基本的计算机知识。
+  * 下面是通过这一小结我们需要
+    ```go
+      package main
+
+      import (
+        "fmt"
+         "net"
+       )
+
+      func main() {
+
+      listener, err := net.Listen("tcp", ":8080")
+      if err != nil {
+        panic(err)
+      }
+      defer listener.Close()
+      fmt.Println("Server is running on :8080...")
+
+      for {
+        
+        conn, err := listener.Accept()
+        if err != nil {
+          fmt.Println("Accept error:", err)
+          continue
+        }
+        go handleConnection(conn)
+      }
+    }
+
+    func handleConnection(conn net.Conn) {
+      defer conn.Close()
+      buf := make([]byte, 1024)
+
+      for {
+      
+        n, err := conn.Read(buf)
+        if err != nil {
+          fmt.Println("Connection closed or read error")
+          return
+        }
+        _, err = conn.Write(buf[:n])
+        if err != nil {
+          fmt.Println("Write error:", err)
+          return
+        }
+      }
+    }
+
+      ```
