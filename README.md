@@ -1,6 +1,6 @@
 <div align="center">
 
-#  Webcoding
+#  network-underlying
 [English Version](./README_EN.md) | **中文版本**
 <br>
 
@@ -9,6 +9,7 @@
 ![Language](https://img.shields.io/badge/language-C-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20WSL-green.svg)
 ![Editor](https://img.shields.io/badge/Editor-VS%20Code-orange.svg)
+![Language](https://img.shields.io/badge/Language-Go-00ADD8?style=flat&logo=go&logoColor=white)
 
 </div>
 
@@ -18,18 +19,23 @@
 
 本项目按照学习路线分为以下几个模块：
 
-### [Part 1: Webcoding based on C](#webcoding-based-on-c)
+### [Part 1: Socket-Underlying-C](#socket-underlying-c)
 - [01 Basic (基础概念)](#01-basic-基础概念)
 - [02 UDP Socket (UDP 通信)](#02-udp-socket-udp-通信)
 - [03 TFTP Implementation (TFTP 协议实现)](#03-tftp-implementation-tftp-协议实现)
 - [04 Broadcast & Multicast (广播与多播)](#04-broadcast--multicast-广播与多播)
 - [05 TCP Socket (TCP 通信)](#05-tcp-socket-tcp-通信)
+### [Part 2: Netpoll-Underlying-Go](#netpoll-underlying-go)
+- [01 The Goal of This Part(本节目标)](#本节目标-the-goal-of-this-part)
+- [02 Sample Code Dissection & netpoll Internals Overview(示例代码具体拆解与底层 `netpoll` 机制概览)](#示例代码具体拆解与底层-netpoll-机制概览)
+- [03 listen Function Internals](#listen-函数的内部调用)
+- [04 The Netpoll Architecture](#netpoll的网络体系)
 
 ---
 
 ## 详细介绍 (Introduction)
 
-## **1.Webcoding based on C**
+## **1.Socket-Underlying-C**
 
 ### 01 Basic (基础概念)
 网络通信的基石，主要解决不同层次上的数据表示差异。
@@ -654,7 +660,7 @@ recvfrom(Echo)
   * **总结**：Epoll 用单线程实现了高并发，避免了多线程频繁切换上下文的开销 (Context Switch)。但如果业务逻辑非常耗时（比如计算密集型），单线程会被卡死。
   * **Go 的伏笔**：Go 语言的 Goroutine 实际上就是将“多线程的易用性”和“Epoll 的高性能”结合了起来——底层用 Epoll 监听，上层用轻量级协程伪装成阻塞 IO，我们将在后续部分看到这种天才般的设计。
 
-## **webcoding of go sdk**
+## **netpoll-underlying-go**
 
 ### **本节目标 (The Goal of This Part)**
 
@@ -714,7 +720,7 @@ recvfrom(Echo)
 
 ---
 
-### **代码具体拆解与底层 `netpoll` 机制概览**
+### **示例代码具体拆解与底层 `netpoll` 机制概览**
 
 这段代码虽然看起来是非常简单的“同步阻塞”风格，但得益于 Go 语言运行时的封装，它在底层其实是非常高效的**异步非阻塞 I/O**。下面我们结合 `netpoll` 来逐一拆解：
 
