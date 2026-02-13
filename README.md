@@ -40,11 +40,11 @@
 ### 01 Basic (基础概念)
 网络通信的基石，主要解决不同层次上的数据表示差异。
 
-* **01_endian (字节序)**
+* **[01_endian](./01_webcoding_based_on_c/01_basic/01_endian.c) (字节序)**
     * 展示了计算机 **小端存储 (Little-Endian)** 与 **大端存储 (Big-Endian)** 的区别。
     * **为什么会有这种存储的差异性**：这纯粹是CPU架构的历史遗留问题（比如 Intel x86 选了小端，而早期的 Motorola 选了大端）。但为了防止乱套，网络协议强行规定了必须用**大端**作为网络字节序。所以我们在发包前必须老老实实把主机的小端序转过去。
   
-* **02_htol_htons (字节序转换)**
+* **[02_htol_htons](./01_webcoding_based_on_c/01_basic/02_htol_htons.c) (字节序转换)**
     * 基于 `<arpa/inet.h>` 头文件。
       ```c
       extern uint16_t htons (uint16_t __hostshort)
@@ -53,7 +53,7 @@
     * 实现 **主机字节序 (Host)** 向 **网络字节序 (Network)** 的转换 (如 `htonl`, `htons`)。
     * **解释一下 `__THROW` 和 `__attribute__`**：这其实是写给编译器看的tip。`__THROW` 告诉编译器这函数绝不抛出异常，`__const__` 告诉编译器这函数是“纯函数”（只依赖输入，没副作用）。这样编译器就能大胆地做优化，把多余的调用给省掉。
 
-* **03_inet_pton (IP地址转换)**
+* **[03_inet_pton](./01_webcoding_based_on_c/01_basic/03_inet_pton.c) (IP地址转换)**
     * 全称 *Presentation to Numeric*。
     * 将点分十进制字符串 (如 "192.168.1.1") 转换为网络传输用的 32位无符号整数。
       ```c
@@ -62,7 +62,7 @@
       ```
     * **为什么需要一个 void 类型**：这里设计得很巧妙，因为 IPv4 用 `struct in_addr` (4字节)，IPv6 用 `struct in6_addr` (16字节)。用 `void*` 就能像万能插头一样，不管你是哪种协议，都能把转换后的二进制数据填进去。
 
-* **04_inet_ntop (IP地址还原)**
+* **[04_inet_ntop](./01_webcoding_based_on_c/01_basic/04_inet_ntop.c)(IP地址还原)**
     * 全称 *Numeric to Presentation*。
     * 将 32位网络字节序整数还原为人类可读的 IP 字符串。
       ```c
@@ -74,7 +74,7 @@
 
 ### 02 UDP Socket (UDP 通信)
 无连接的、不可靠的数据传输协议。
-* **01_socket(套接字)**
+* **[01_socket(套接字)](./01_webcoding_based_on_c/02_udp/01_socket.c)**
     * 展示了socket套接字创建的函数
       ```c
       int socket (int __domain, int __type, int __protocol)
@@ -82,7 +82,7 @@
     * domain决定IP类型，type则是决定tcp还是udp的传输类型。protocol是具体的协议格式
     * socket是一个int类型，靠文件描述符的抽象在系统层面上实现调用，展现了linux中一切皆文件的设计思想
     * 作为文件描述符，一定要在程序最后对其进行关闭，close在通信过程中就意味着断开连接，在tcp中，这一点变得更为复杂
-* **02_sendto**
+* **[02_sendto](./01_webcoding_based_on_c/02_udp/02_sendto.c)**
    * 展示了udp传输类型的数据发送
       ```c
       ssize_t sendto (int __fd, const void *__buf, size_t __n,int __flags, __CONST_SOCKADDR_ARG __addr,socklen_t __addr_len);
@@ -118,7 +118,7 @@
   * 可以看到，这实际上是进行了一个数据压缩的过程，这样的设计展现了编程最核心的问题，自然语言编程和机器二进制构成的矛盾
 
 
-* **03_bind**
+* **[03_bind](./01_webcoding_based_on_c/02_udp/03_bind.c)**
   * bind这个函数主要是为了固定ip和端口号，根据这个函数的面向我们可以很容易理解信息的接收方更加需要这个需求。
 
 
@@ -129,7 +129,7 @@
     ```
 
   * 在tcp/udp编程时我们一般简单的就把server称为需要绑定的一方，但这实际上是由于信息接受和发送的相对关系所决定的，在多播和组播中我们能够看到这一点的进一步体现
-* **04_recvfrom**
+* **[04_recvfrom](./01_webcoding_based_on_c/02_udp/04_recvfrom.c)**
   * recvform是udp接受函数
     ```c
     recvfrom (int __fd, void *__restrict __buf, size_t __n, int __flags,
@@ -140,7 +140,7 @@
   * 这里需要注意的是recvfrom是接受别的主机的数据，所以我们需要预先创建空的结构体供其填入，并且还改变addrlen来作为接受到的信息长度输出，这种设计使得udp可以很简单的实现多线程工作，代价就是每一个client都需要相应的结构体来对应，而我们将会在后续看到，因为tcp要求的三次握手，导致tcp的设计走向了截然不同的道路
 
 
-* **05_server&&06_client** 
+* **[05_server](./01_webcoding_based_on_c/02_udp/05_server.c)&&[06_client](./01_webcoding_based_on_c/02_udp/06_client.c)** 
   * 这一段是具体的udp的客户端和服务端的运行代码。本质上就是调用上述函数具体实现通信过程
     ```c
       if(argc<3){
@@ -201,7 +201,7 @@ recvfrom(Echo)
   * 在开始之前我想简单的介绍一下理解tftp的核心所在，作为基于udp协议的小文件传输协议，在c中实现tftp最让人恼火也最为关键的就是**手动构建和分析二进制报文**，你需要去拼凑每一个字节。
 
 
-* **01_tftp_client**
+* **[01_tftp_client](./01_webcoding_based_on_c/03_tftp/01_tftp_client.c)**
 * **Part 1: 报文构造区**
   * 明确下载文件名 `scanf("%s",filename);`
   * 第一个难点是去构造数据报文，这玩意不是字符串，是紧凑的二进制。
@@ -269,7 +269,7 @@ recvfrom(Echo)
   * **总结**：这样一个客户端主要的难题就是二进制报文的处理，因为udp本身是不可靠的，所以我们就需要手工做数据包做数据包头进行验证，我们可以看到的是，这样一个验证思路实际上和tcp的三次握手非常相像，所以一般由tcp承担文件传输的工作
 
 
-* **02_tftp_server**
+* **[02_tftp_server](./01_webcoding_based_on_c/03_tftp/02_tftp_server.c)**
   * 服务端逻辑相对被动，主要是解析和反馈：
     1. 验证数据报文和是否由相关文件
 
@@ -322,12 +322,12 @@ recvfrom(Echo)
       // 允许重用本地地址和端口，解决 "Address already in use" 错误
       setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
       ```
-* **01_broadcast_send** 
+* **[01_broadcast_send](./01_webcoding_based_on_c/04_broadcast&&groupcast/01_broadcast_send.c)** 
   * 这个文件展现的是 broadcast 的发送方。和 tcp，udp 编程不同，在广播和多播里并没有传统意义上的 cs 框架，而是信息发送和接受的相对关系。
   * 这里采用 sendto 函数，除了需要额外对 socket 做功能添加外，基本上和 udp 的 client 思路一致。
 
 
-* **02_broadcast_recv.c**
+* **[02_broadcast_recv](./01_webcoding_based_on_c/04_broadcast&&groupcast/02_broadcast_recv.c)**
   * 这个文件的结构甚至比 udp_server 的结构还更加简单，因为这里广播地址是确定的，只需要监听是否有对应的数据包即可。
   * 这里有意思的是 recv 里面并不需要设置对应权限，这也和广播的设计思路相一致，广播的发送方需要额外的检验，而接收方只需要判断这个数据包是不是找自己的。
 
@@ -346,7 +346,7 @@ recvfrom(Echo)
 
 
 
-* **03_groupcast_send.c**
+* **[03_groupcast_send.c](./01_webcoding_based_on_c/04_broadcast&&groupcast/03_groupcast_send.c)**
   * 在这里组播的发送方甚至连 `setsockopt` 都不用使用，这是因为本身有 D 类 IP 段被划分成专用于组播。所以 send 只需要向这些 ip 段里面发送数据，当它进行发送的时候，实际上就已经在对应 ip 设置了对应的广播组。
 
 
@@ -354,7 +354,7 @@ recvfrom(Echo)
   * **INADDR_ANY 是什么**：在代码中常常见到 `server_addr.sin_addr.s_addr = htonl(INADDR_ANY);`。它的数值其实是 `0.0.0.0`。它的意思是“绑定到本地所有可用的网络接口”。如果你既有 Wifi 又有网线，使用 `INADDR_ANY` 可以让你从两个网卡都能接收到数据，而不需要把程序绑定死在某一个具体的 IP 上。
 
 
-* **04_groupcast_recv.c**
+* **[04_groupcast_recv.c](./01_webcoding_based_on_c/04_broadcast&&groupcast/04_groupcast_recv.c)**
   * recv 中需要使用 `setsockopt` 进行设置。在之前所说，setsockopt 中的 `_optval` 是 `void*` 类型，这也意味着我们可以构造结构体进行数据传参，这也是我们在 c 中常用的方法。而这里我们需要采用的是专门为了多播组设置的结构体 `ip_mreq` 进行参数设置：
 
 
@@ -393,7 +393,7 @@ recvfrom(Echo)
 
 
 
-* **01_client**
+* **[01_client](./01_webcoding_based_on_c/05_tcp/01_client.c)**
   * 这里展现的是 tcp 的客户端，在创建好 socket 和封装好 server 结构体后，我们首先要调用封装好的函数去建立底层连接。
 
 
@@ -422,7 +422,7 @@ recvfrom(Echo)
 
 
 
-* **02_server.c**
+* **[02_server](./01_webcoding_based_on_c/05_tcp/02_server.c)**
   * 这里是 tcp 服务器的实例。在创建好 socket 和填充绑定好结构体后，首先要将 socket 设置为监听状态。
      ```c
     extern int listen (int __fd, int __n) __THROW;
@@ -490,7 +490,7 @@ recvfrom(Echo)
     ```
 
 
-* **03_server_fork.c**
+* **[03_server_fork](./01_webcoding_based_on_c/05_tcp/03_server_fork.c)**
   * 这里是通过多进程的方式来实现并发。
 
 
@@ -532,7 +532,7 @@ recvfrom(Echo)
 
 
 
-* **04_server_thread.c**
+* **[04_server_thread](./01_webcoding_based_on_c/05_tcp/04_server_thread.c)**
   * 使用多线程处理。进程是资源分配的单位（重），线程是 CPU 调度的单位（轻）。
 
 
@@ -571,7 +571,7 @@ recvfrom(Echo)
   * **原理**：默认情况下线程是 `joinable` 的，退出后需要主线程调用 `pthread_join` 来“收尸”。调用 `detach` 是告诉内核：“这个线程也是个普通打工人，死了直接埋了就行”，内核会在线程退出时自动释放其栈空间和资源，无需主线程操心。
 
 
-* **05_server_noblock.c**
+* **[05_server_noblock](./01_webcoding_based_on_c/05_tcp/05_server_noblock.c)**
   * 在这个文件里面我们尝试将 socket 设置为非阻塞 (Non-blocking)。这是迈向高性能 IO (Epoll/IOCP) 的第一步。
 
 
@@ -595,7 +595,7 @@ recvfrom(Echo)
   * 此时必须检查 `errno`。如果 `errno == EAGAIN` (Try again) 或 `EWOULDBLOCK`，说明**“现在没数据，不是出错了，待会再来”**。这使得程序可以在没数据时去干别的事。
 
 
-* **06_server_epoll.c**
+* **[06_server_epoll](./01_webcoding_based_on_c/05_tcp/06_server_epoll.c)**
   * **Epoll**: Linux 下最高效的 IO 多路复用器。它解决了 `select/poll` 轮询所有 socket 效率低下的问题。
 
 
