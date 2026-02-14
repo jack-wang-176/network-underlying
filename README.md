@@ -842,10 +842,25 @@ recvfrom(Echo)
 然而，分水岭出现在 `fd.init` 之后——Go 并没有止步于创建 Socket，而是通过 `runtime` 将其无缝接入了 Netpoll 体系。在接下来的部分中，我们将进一步探索这个围绕 Netpoll 建立起来的庞大网络处理体系，以及它是如何通过调度器与 Go 的多协程（Goroutine）完美结合的。
 ### netpoll的网络体系
 我们继续延续之前的思路，我们先来看`netpoll`的初始化， 这里必须强调的一点是，我们之前的讨论都是在`internal`包下讨论的，这个包处理的是更上层的逻辑，而在接下来，我们将会深入runtime包进行讨论，而我们之前忽略的一行`pd.runtimeCtx = ctx`这个操作就是因为这两个包中各有一个`polldesc`结构体，这个结构体一一对应，是一个结构实体的两个功能层面，而这个操作就是将``runtime`结构体下的结构体的地址(uintptr结构)封装到`internal`包下结构体的一个元素中，当我们进行对其的底层操作时，需要将这个元素传入底层相应函数，go中以这种方式实现不同层级的业务封装和偶联。
-#### 1. netpoll创建的底层实现
+#### netpoll创建的底层实现
 * 首先我们可以在[netpollGenericInit](./02_go_sdk/go/src/runtime/netpoll.go#L218)看到为了防止多个初始化进行的验证操作，是否初始化->否，加锁->是否初始化->否，初始化。这样一个操作保证了，在存在线程竞争的时候不会出现错误初始化。
 * 继续深入下去，我们再次来到了汇编实现部分。这一部分的代码逻辑不进行细究，但是有两个点是值得注意的地方
   * go为不同的系统提供了不同的操作集，go上层通过检测goroot或者用户指定了自动选择底层操作集，并由此屏蔽了不同操作系统的底层差异，而在本节我们一直基于linux系统来进行讨论，这一点在netpoll这个名称也得到体现
   * 在go1.19之后，在`nternal/syscall/unix`这个目录中
   go暴露了syscall6接口，这个接口直接对接了操作系统底层，在我们之前提到的系列视频中，这就是进行系统调用的用户层级的进一步封装接口，我们可以看到系统底层就是对寄存器进行操作，而go又帮助我们封装了上层的操作码帮助用户便捷正确的进行系统调用
-
+#### netpoll的文件接入
+* 我们可以在[poll_runtime_pollOpen](./02_go_sdk/go/src/runtime/netpoll.go#L244)中看到netpoll是如何处理接入的
+  ```go
+  拿取底层polldesc
+  ...
+  检查并初始化
+  ...
+  netpollopen(fd, pd)
+  ```
+* 这里`polldesc`的初始化我们在之后讨论，这里你只需要知道存在一个缓存机制来进行回收，所以这里的检查必须保证没有对应的goroutine对其进行写入或等待相应，检查完毕后则进行填入上层传递的数据，绑定到对应文件描述符上，为防止竞争，这里同样的使用加锁操作。这里还设置了版本号，防止socket错误解决上个使用对应polldesc返回的消息。
+* 我们来继续深入[netpollopen](./02_go_sdk/go/src/runtime/netpoll_epoll.go#L49)，这里值得注意的有两点
+  * `ev.Events = syscall.EPOLLIN | syscall.EPOLLOUT | syscall.EPOLLRDHUP | syscall.EPOLLET`这里和c语言中一样，同样使用封装的二进制进行标记操作，因此使用或操作。这里和我们之前在c语言中实现的一致，同样使用边缘触发形式进行消息提醒
+  * `tp := taggedPointerPack(unsafe.Pointer(pd), pd.fdseq.Load())`这一点很有意思，在event里面我们储存了对应的socket信息，但是对应的socket如果关闭却由新的socket复用对应的polldesc呢，对于这种现象go将版本号和polldesc指针共同封装在一个uintptr中（由于字节对齐，一个8字节的结构体第一字节的最初3位一定为0，同时尽管指针占64位，但是指针的实际内存寻址在大多数处理器中只需要48位甚至更少，这里的寻址的理解你同样可以借鉴前面提到的视频，为了凑齐10位，能容纳1023个数字几乎可以解决大多数情况，使用位操作将指针向高位移，并通过或操作进行写入），同时还进行重新拆解并和原内容进行比较来判断是否出现数据泄露。
+* 最后我们通过syscall.EpollCtl来调用系统底层向对应的epoll进行对应的文件写入。
+### polldesc的初始化
+* 在这一节中，我们回到[poll_runtime_pollOpen](./02_go_sdk/go/src/runtime/netpoll.go#L244)开头函数来讨论初始化是如何操作的
