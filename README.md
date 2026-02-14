@@ -28,9 +28,9 @@
 ### [Part 2: Netpoll-Underlying-Go](#netpoll-underlying-go)
 - [01 The Goal of This Part(本节目标)](#本节目标-the-goal-of-this-part)
 - [02 Sample Code Dissection & netpoll Internals Overview(示例代码具体拆解与底层 `netpoll` 机制概览)](#示例代码具体拆解与底层-netpoll-机制概览)
-- [03 listen Function Internals](#listen-函数的内部调用)
-- [04 The Netpoll Architecture](#netpoll的网络体系)
-
+- [03 listen Function Internals(listen函数的内部调用)](#listen-函数的内部调用)
+- [04 The Netpoll Architecture(netpoll的网络体系)](#netpoll的网络体系)
+- [05 initialization of polldesc(polldesc的初始化)](#polldesc的初始化)
 ---
 
 ## 详细介绍 (Introduction)
