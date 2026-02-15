@@ -30,7 +30,7 @@
 - [02 Sample Code Dissection & netpoll Internals Overview(示例代码具体拆解与底层 `netpoll` 机制概览)](#示例代码具体拆解与底层-netpoll-机制概览)
 - [03 listen Function Internals(listen函数的内部调用)](#listen-函数的内部调用)
 - [04 The Netpoll Architecture(netpoll的网络体系)](#netpoll的网络体系)
-- [05 initialization of polldesc(polldesc的初始化)](#polldesc的初始化)
+
 ---
 
 ## 详细介绍 (Introduction)
@@ -862,5 +862,27 @@ recvfrom(Echo)
   * `ev.Events = syscall.EPOLLIN | syscall.EPOLLOUT | syscall.EPOLLRDHUP | syscall.EPOLLET`这里和c语言中一样，同样使用封装的二进制进行标记操作，因此使用或操作。这里和我们之前在c语言中实现的一致，同样使用边缘触发形式进行消息提醒
   * `tp := taggedPointerPack(unsafe.Pointer(pd), pd.fdseq.Load())`这一点很有意思，在event里面我们储存了对应的socket信息，但是对应的socket如果关闭却由新的socket复用对应的polldesc呢，对于这种现象go将版本号和polldesc指针共同封装在一个uintptr中（由于字节对齐，一个8字节的结构体第一字节的最初3位一定为0，同时尽管指针占64位，但是指针的实际内存寻址在大多数处理器中只需要48位甚至更少，这里的寻址的理解你同样可以借鉴前面提到的视频，为了凑齐10位，能容纳1023个数字几乎可以解决大多数情况，使用位操作将指针向高位移，并通过或操作进行写入），同时还进行重新拆解并和原内容进行比较来判断是否出现数据泄露。
 * 最后我们通过syscall.EpollCtl来调用系统底层向对应的epoll进行对应的文件写入。
-### polldesc的初始化
+#### polldesc的初始化
 * 在这一节中，我们回到[poll_runtime_pollOpen](./02_go_sdk/go/src/runtime/netpoll.go#L244)开头函数来讨论初始化是如何操作的
+* 为了保证高效和防止竞争，go在初始化时往往会一次初始化大量结构，并进行存储，这一点在polldesc中也不例外。
+  ```go
+  ...
+   加锁，缓存池子中是否有
+  ...
+  有直接拿出
+  ...
+  没有就调用函数进行初始化
+  ...
+  解锁
+  ```
+* 在这里go使用链表的数据结构来储存polldesc，拿出或者说是放回只需要简单的更改链表的指向。
+* 为了满足8字节的地址对齐，go在函数内部封装匿名结构体填充无用字节，并申请非gc内存`persistentalloc`后进行切割（防止被错误回收）。go采用了gc机制来简化了内存管理操作，用户不需要在意具体的内存位置，但是对应的代价就是毫秒级别的内存扫描和内存初始化封装检测使得go无法去处理系统底层操作。
+#### polldesc 和 pollcache
+* 刚才我们看到了polldesc（runtime）的初始化，那么现在我们就回过头来看看这两个结构体的具体构成
+* [pollcache](./02_go_sdk/go/src/runtime/netpoll.go#L192)这么一个结构体就是我们之前所说的链表缓存结构的链表头，也就是说，它在我们的实际业务中不起作用，只是充当一个临时的缓存仓库的作用，因此它只包含一个锁和一个空polldesc
+* [polldesc](./02_go_sdk/go/src/runtime/netpoll.go#L75)这个结构体是netpoll体系中的核心结构体，是底层处理网络机制的关键偶联处，它主要包含一下这几个构成
+  * 1.数据保护：包含互斥锁和原子状态位，保证数据操作安全
+  * 2.超时控制：包含定时器和定时器序列号，防止过长堵塞和被之前的定时器触发
+  * 3.身份标识：包含socket文件描述符，本身文件描述符，和链表指针，其中socket文件描述符在我们所说的ev.data中被写入
+  * 4.协程调度器：这个包含读写两个uintptr指示位，0代表空闲，1代表epoll通知有事件到来，可以直接操作，或者本身填入等待相应的协程地址
+
