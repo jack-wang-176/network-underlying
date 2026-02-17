@@ -1017,6 +1017,9 @@ Go Runtime 极度厌恶频繁的小对象内存分配。因此，`pollDesc` 采�
 
 **总结**：
 `pollDesc` 巧妙地将底层的 **IO 资源**（FD）、中间层的 **IO 状态**（rg/wg 状态机）以及上层的 **调度实体**（Goroutine 地址）通过一个结构体紧密耦合在一起。这使得 Go 能够在内核通知事件到来时，以 O(1) 的复杂度瞬间找到并唤醒正确的 Goroutine。
-
+### accept的底层实现
+ 在上两节中我们看到了listen的底层实现，在开始之前，我们先来从下到上的聚焦于这个函数的返回值封装。首先对接到我们c语言的部分`socket`，这个函数返回的文件描述符经由上层`listenTCPProto`封装成了[TCPlistener](./02_go_sdk/go/src/net/tcpsock.go#L291)，这个结构体除了文件描述符外还包含[listenConfig](./02_go_sdk/go/src/net/dial.go#L672)结构体,这个结构体包含`control`钩子函数，探测周期等，用作对`socket`做进一步的限制明确，这个结构体的意义就是将操作系统底层的设置向用户层敞开。最后在上层实现中，通过结构定义和对`tcplistener`的方法封装将`listen`和这个结构体偶联在一块。而这个上层接口本质上是基于这个下层结构体起作用，而这种关系是我们在代码中调用`net.listen`时通过传入字段决定好的。
+ `listen`这个接口是处理流式和面向连接的协议，包含`tcp`,`ssl`等，与其平行的功能接口还有`PacketConn`处理数据包协议，包含`udp` `dns`等等。这样一种设计方式使得go实现了面向接口编程的思想，将代码模块化组件化。
+ * 现在我们知道了，我们在这里讨论的accpet是通过listen接口和`func (ln *TCPListener) accept()`偶联起来的accept，
 
 
