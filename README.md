@@ -30,6 +30,7 @@
 - [02 Sample Code Dissection & netpoll Internals Overview(示例代码具体拆解与底层 `netpoll` 机制概览)](#示例代码具体拆解与底层-netpoll-机制概览)
 - [03 listen Function Internals(listen函数的内部调用)](#listen-函数的内部调用)
 - [04 The Netpoll Architecture(netpoll的网络体系)](#netpoll-的网络体系深入-runtime)
+- [05 Implementation of the three Listener interface methods for the TCP protocol](#listen接口三个方法在tcp协议下的实现)
 
 ---
 
@@ -753,7 +754,7 @@ recvfrom(Echo)
 
 #### 1. 创建 Socket
 
-* 如果我们沿着 `listen` 函数一路深入，会发现核心入口是 [socket](https://www.google.com/search?q=./02_go_sdk/go/src/net/sock_posix.go%23L18) 函数。这个函数是 Go 底层创建 socket 的实例，和我们之前在 C 语言中调用的 `socket()` 系统调用一样，它也会返回一个相应的文件描述符（File Descriptor）。
+* 如果我们沿着 `listen` 函数一路深入，会发现核心入口是 [socket](./02_go_sdk/go/src/net/sock_posix.go#L18) 函数。这个函数是 Go 底层创建 socket 的实例，和我们之前在 C 语言中调用的 `socket()` 系统调用一样，它也会返回一个相应的文件描述符（File Descriptor）。
 
   ```go
   // 核心逻辑简述
@@ -777,7 +778,7 @@ recvfrom(Echo)
 
 #### 2. 流式套接字的构建：`listenStream`
 
-* 在函数内部，创建流式套接字（TCP）和数据包套接字（UDP）被封装成了不同的路径。以我们关注的流式套接字为例，看看 [listenStream](https://www.google.com/search?q=./02_go_sdk/go/src/net/sock_posix.go%23L150) 做了什么：
+* 在函数内部，创建流式套接字（TCP）和数据包套接字（UDP）被封装成了不同的路径。以我们关注的流式套接字为例，看看 [listenStream](./02_go_sdk/go/src/net/sock_posix.go#L150) 做了什么：
 
   ```go
   // 1. 设置监听器的默认 Socket 选项
@@ -800,7 +801,7 @@ recvfrom(Echo)
 
 #### 3. 进入 Netpoll：`fd.init`
 
-* 之前的步骤和我们在 C 中实现的逻辑别无二致，但从 [fd.init](https://www.google.com/search?q=./02_go_sdk/go/src/internal/poll/fd_unix.go%23L55) 开始，我们将进入 Go 独有的魔法领域——**Netpoll（网络轮询器）**。
+* 之前的步骤和我们在 C 中实现的逻辑别无二致，但从 [fd.init](./02_go_sdk/go/src/internal/poll/fd_unix.go#L55) 开始，我们将进入 Go 独有的魔法领域——**Netpoll（网络轮询器）**。
 
 * 这个函数的主要功能是判断当前文件描述符是否属于网络文件（即非普通文件），如果是，则为它初始化网络轮询机制：
 
@@ -811,7 +812,7 @@ recvfrom(Echo)
 
 #### 4. 运行时与网络的交汇：`pd.init`
 
-* [init](https://www.google.com/search?q=./02_go_sdk/go/src/internal/poll/fd_poll_runtime.go%23L38) 函数是 Go `net` 标准库与 `runtime` 运行时包的关键交汇点，也是“同步代码、异步执行”的基石。
+* [init](./02_go_sdk/go/src/internal/poll/fd_poll_runtime.go#L38) 函数是 Go `net` 标准库与 `runtime` 运行时包的关键交汇点，也是“同步代码、异步执行”的基石。
 
   ```go
   func (pd *pollDesc) init(fd *FD) error {
@@ -828,7 +829,6 @@ recvfrom(Echo)
       pd.runtimeCtx = ctx
       return nil
   }
-
   ```
 
 * **`serverInit.Do`**：利用 `sync.Once` 机制，确保在整个程序生命周期中，全局的网络轮询器（Poller）只会被初始化一次。
@@ -857,7 +857,7 @@ recvfrom(Echo)
 
 #### 1. Netpoll 创建的底层防线：双重检查锁
 
-当我们追踪 `netpoll` 的初始化流程时，在 [netpollGenericInit](https://www.google.com/search?q=./02_go_sdk/go/src/runtime/netpoll.go%23L218) 中，我们可以看到一段非常经典的并发控制代码。为了确保在多线程高并发场景下 `netpoll` 只被初始化一次，Go 采用了 **Double-Checked Locking（双重检查锁定）** 模式：
+当我们追踪 `netpoll` 的初始化流程时，在 [netpollGenericInit](./02_go_sdk/go/src/runtime/netpoll.go#L218) 中，我们可以看到一段非常经典的并发控制代码。为了确保在多线程高并发场景下 `netpoll` 只被初始化一次，Go 采用了 **Double-Checked Locking（双重检查锁定）** 模式：
 
 1. **First Check（无锁检查）**：首先利用原子操作（Atomic Load）快速判断 `netpollInited` 标志位。如果已初始化，直接返回，避免了昂贵的锁开销。
 2. **Lock（加锁）**：若未初始化，则获取全局锁，进入临界区。
@@ -881,7 +881,7 @@ Go 语言遵循“编写一次，到处编译”的哲学。在源码层面，Go
 
 #### 3.netpoll 的文件接入与 pollDesc 生命周期
 * 核心接入点：poll_runtime_pollOpen
-在 [poll_runtime_pollOpen](https://www.google.com/search?q=./02_go_sdk/go/src/runtime/netpoll.go%23L244) 中，我们可以看到 `netpoll` 是如何将底层的网络描述符（FD）纳入到 Runtime 的监管之下的。这个函数起到了承上启下的作用：
+在 [poll_runtime_pollOpen](./02_go_sdk/go/src/runtime/netpoll.go#L244) 中，我们可以看到 `netpoll` 是如何将底层的网络描述符（FD）纳入到 Runtime 的监管之下的。这个函数起到了承上启下的作用：
 
   ```go
   // 伪代码逻辑概览
@@ -911,7 +911,7 @@ Go 语言遵循“编写一次，到处编译”的哲学。在源码层面，Go
 
 #### 4. 深入底层：netpollopen 与 Tagged Pointer 魔法
 
-继续深入 [netpollopen](https://www.google.com/search?q=./02_go_sdk/go/src/runtime/netpoll_epoll.go%23L49)（以 Linux Epoll 为例），这里有两处极具 Go 特色的底层优化：
+继续深入 [netpollopen](./02_go_sdk/go/src/runtime/netpoll_epoll.go#L49)（以 Linux Epoll 为例），这里有两处极具 Go 特色的底层优化：
 
 **1.Edge Triggered (ET) 模式**：
 * 代码中设置了 `ev.Events = syscall.EPOLLIN | syscall.EPOLLOUT | syscall.EPOLLRDHUP | syscall.EPOLLET`。
@@ -936,7 +936,7 @@ Go 的解决方案是将 **指针地址** 和 **版本号** 压缩进同一个 `
 
 #### 5. pollDesc 的内存管理：高效复用与 GC 隔离
 
-回到 [poll_runtime_pollOpen](https://www.google.com/search?q=./02_go_sdk/go/src/runtime/netpoll.go%23L244) 的开头，我们来探讨 `pollDesc` 是如何被创建和管理的。
+回到 [poll_runtime_pollOpen](./02_go_sdk/go/src/runtime/netpoll.go#L244) 的开头，我们来探讨 `pollDesc` 是如何被创建和管理的。
 
 * **批量申请与链表缓存**：
 Go Runtime 极度厌恶频繁的小对象内存分配。因此，`pollDesc` 采用了一个全局的 `pollCache` 链表进行管理：
@@ -965,7 +965,7 @@ Go Runtime 极度厌恶频繁的小对象内存分配。因此，`pollDesc` 采�
 
 **1**. pollCache：链表式内存池：
 
-* 首先，我们回顾 [pollcache](https://www.google.com/search?q=./02_go_sdk/go/src/runtime/netpoll.go%23L192) 结构体。它在实际的网络业务逻辑中并不直接参与数据传输，而是扮演着 **Memory Pool（内存池）** 或 **Free List（空闲链表）** 的角色。
+* 首先，我们回顾 [pollcache](./02_go_sdk/go/src/runtime/netpoll.go#L192) 结构体。它在实际的网络业务逻辑中并不直接参与数据传输，而是扮演着 **Memory Pool（内存池）** 或 **Free List（空闲链表）** 的角色。
 
 * **结构定义**：它本质上是一个受锁保护的单向链表头。
   ```go
@@ -982,7 +982,7 @@ Go Runtime 极度厌恶频繁的小对象内存分配。因此，`pollDesc` 采�
 
 **2**. pollDesc：Netpoll 的心脏
 
-* [pollDesc](https://www.google.com/search?q=./02_go_sdk/go/src/runtime/netpoll.go%23L75) (Polling Descriptor) 是整个 `netpoll` 体系中最为复杂的结构体。它是 Go Runtime 层面对应底层网络文件描述符的“影子对象”。
+* [pollDesc](./02_go_sdk/go/src/runtime/netpoll.go#L75) (Polling Descriptor) 是整个 `netpoll` 体系中最为复杂的结构体。它是 Go Runtime 层面对应底层网络文件描述符的“影子对象”。
 
 * 为了清晰地理解它的职责，我们可以将其字段划分为四大功能模块：
 
@@ -1017,9 +1017,134 @@ Go Runtime 极度厌恶频繁的小对象内存分配。因此，`pollDesc` 采�
 
 **总结**：
 `pollDesc` 巧妙地将底层的 **IO 资源**（FD）、中间层的 **IO 状态**（rg/wg 状态机）以及上层的 **调度实体**（Goroutine 地址）通过一个结构体紧密耦合在一起。这使得 Go 能够在内核通知事件到来时，以 O(1) 的复杂度瞬间找到并唤醒正确的 Goroutine。
-### accept的底层实现
+### listen接口三个方法在tcp协议下的实现
  在上两节中我们看到了listen的底层实现，在开始之前，我们先来从下到上的聚焦于这个函数的返回值封装。首先对接到我们c语言的部分`socket`，这个函数返回的文件描述符经由上层`listenTCPProto`封装成了[TCPlistener](./02_go_sdk/go/src/net/tcpsock.go#L291)，这个结构体除了文件描述符外还包含[listenConfig](./02_go_sdk/go/src/net/dial.go#L672)结构体,这个结构体包含`control`钩子函数，探测周期等，用作对`socket`做进一步的限制明确，这个结构体的意义就是将操作系统底层的设置向用户层敞开。最后在上层实现中，通过结构定义和对`tcplistener`的方法封装将`listen`和这个结构体偶联在一块。而这个上层接口本质上是基于这个下层结构体起作用，而这种关系是我们在代码中调用`net.listen`时通过传入字段决定好的。
  `listen`这个接口是处理流式和面向连接的协议，包含`tcp`,`ssl`等，与其平行的功能接口还有`PacketConn`处理数据包协议，包含`udp` `dns`等等。这样一种设计方式使得go实现了面向接口编程的思想，将代码模块化组件化。
- * 现在我们知道了，我们在这里讨论的accpet是通过listen接口和`func (ln *TCPListener) accept()`偶联起来的accept，
+ #### accept的底层实现
+ * 现在我们知道了，我们在这里讨论的accpet是通过listen接口和`func (ln *TCPListener) accept()`偶联起来的[accept](./02_go_sdk/go/src/net/tcpsock_posix.go#L158)实现，在接下来我们将从上往下的去讨论accept的底层实现
+ * 首先我们来到fd_unit这个文件[accept](./02_go_sdk/go/src/net/fd_unix.go#L171)这个函数实现了这四个功能
+    1. 调用listen封装netpoll下的accept方法
+    2. 包装成newFD对象，
+    3. 注册到epoll中
+    4. 完善身份信息
+* 我们首先来看fd_unix下的[accept](./02_go_sdk/go/src/internal/poll/fd_unix.go#L594)
+    ```go
+    准备
+    ...
+    加锁
+    ...
+   s, rsa, errcall, err := accept(fd.Sysfd)
+		if err == nil {
+			return s, rsa, "", err
+		}
+		switch err {
+		case syscall.EINTR:
+			continue
+		case syscall.EAGAIN:
+			if fd.pd.pollable() {
+				if err = fd.pd.waitRead(fd.isFile); err == nil {
+					continue
+				}
+			}
+		case syscall.ECONNABORTED:
 
-
+			continue
+		}
+		return -1, nil, errcall, err 
+    ```
+  * 这里的思路和我们在c中[netpoll](./01_webcoding_based_on_c/05_tcp/06_server_epoll.c)的实现一节的思路一致,因此不过多赘述。
+  * 在这里我们重点关注accept和go的多线程特性的结合，深入waitRead函数，我们最终可以通过连接声明函数从internal包来到runtime包的[poll_runtime_pollWait](./02_go_sdk/go/src/runtime/netpoll.go#L336)，注意，这里我们的业务结构体从pollfd转到了polldesc，这个转化是靠我们之前提到的映射关系
+    ```go
+    检查错误
+    ...
+    特殊系统处理
+    ...
+    for !netpollblock(pd, int32(mode), false) {
+		errcode = netpollcheckerr(pd, int32(mode))
+		if errcode != pollNoError {
+			return errcode
+		}
+		// Can happen if timeout has fired and unblocked us,
+		// but before we had a chance to run, timeout has been reset.
+		// Pretend it has not happened and retry.
+	 }
+    ```
+  * 在开始挂起之前，runtime先通过[netpollcheckerr](./02_go_sdk/go/src/runtime/netpoll.go#L512)检查是否有超时或者说是关闭错误，确定没有之后，runtime根据不同的系统选择不同的触发方式，这一点基于不同系统的特性设计
+  * 在这里设计循环的逻辑是为了防止触发超时的时候netFD的deadline被并发修改，所以这里要再次进行是否超时的检验。
+  * 接下来我们进一步深入[netpollbloack](./02_go_sdk/go/src/runtime/netpoll.go#L548)这个函数，
+    ```go
+      选择读通道还是写通道
+      ...
+      for {
+		if gpp.CompareAndSwap(pdReady, pdNil) {
+			return true
+		}
+		if gpp.CompareAndSwap(pdNil, pdWait) {
+			break
+		}
+		if v := gpp.Load(); v != pdReady && v != pdNil {
+			throw("runtime: double wait")
+		}
+    ...
+    	if waitio || netpollcheckerr(pd, mode) == pollNoError {
+		gopark(netpollblockcommit, unsafe.Pointer(gpp), waitReasonIOWait, traceBlockNet, 5)
+	}
+	old := gpp.Swap(pdNil)
+	if old > pdWait {
+		throw("runtime: corrupted polldesc")
+	}
+	return old == pdReady
+	}
+    ```
+   * 在这里我们需要注意，在这时候下pd.rg和wg的值都是默认值pdnil，这在前面[polldesc](#5-polldesc-的内存管理高效复用与-gc-隔离)一节中已经展现。
+   * 在这里我们需要注意compareandswap的底层实现是基于原子操作判断对应结构体下value是否和旧值相等，若相等则交换，这一点将值检测和交换融为一体。在最后检查后我们进行了函数挂起，这时候整个代码阻塞，在协程被叫醒之后返回是否是被数据包叫醒而非因为超时等原因
+   * 下面我们来到[gopark](./02_go_sdk/go/src/runtime/proc.go#L443)的具体实现
+     ```go
+     注意，这个函数预先传入了将在g0栈上运行的回调函数
+     ...
+       mp := acquirem()
+	   gp := mp.curg
+     ...
+     检查状态
+     ...
+     保存现场
+     ...
+     释放m并切换栈执行park_m函数
+     ```
+    * 首先我们先来解释一下acquirem和realse的搭配使用，这两个函数本质就是加锁将当前g与m强制绑定起来，防止在保存现场的时候g被调用去做其他的事情。在保存现场到系统m中后则通过mcall语句跳转入g0栈。
+    * 这里的回调函数是我们在[netpollbloack](./02_go_sdk/go/src/runtime/netpoll.go#L548)中传入的[netpollblockcommit](./02_go_sdk/go/src/runtime/netpoll.go#L529)函数
+    * 在g0栈中执行[park_m](./02_go_sdk/go/src/runtime/proc.go#L4007)函数
+      ```go
+      ...
+      casgstatus(gp, _Grunning, _Gwaiting)
+      ...
+      dropg()
+      ...
+      if fn := mp.waitunlockf; fn != nil {
+		ok := fn(gp, mp.waitlock)
+		mp.waitunlockf = nil
+		mp.waitlock = nil
+		if !ok {
+			trace := traceAcquire()
+			casgstatus(gp, _Gwaiting, _Grunnable)
+			if bubble != nil {
+				bubble.decActive()
+			}
+			if trace.ok() {
+				trace.GoUnpark(gp, 2)
+				traceRelease(trace)
+			}
+			execute(gp, true) // Schedule it back, never returns.
+		  }
+      ...
+       schedule()
+      ```
+    * [casgstatus](./02_go_sdk/go/src/runtime/proc.go#L1105)将协程从 _Grunnable转化成_Gwaiting状态。
+    * [dropg](./02_go_sdk/go/src/runtime/proc.go#L4001)则将m与g解绑(m.curg = nil,gp.m = nil)
+    * 最后执行[netpollblockcommit](./02_go_sdk/go/src/runtime/netpoll.go#L529)回调函数，执行atomic.Store(gpp, gp)，把 Goroutine 地址填入 pd.rg中
+    * 最后m执行[schedule](./02_go_sdk/go/src/runtime/proc.go#L3839)去寻找下一个被执行的g
+    * 总结:
+* 然后我们来看一下[newFD](./02_go_sdk/go/src/net/fd_unix.go#L26)这个函数，这个函数的主要作用就是包装对象。这个对象包含poll.FD：连接go的io层和runtime层，IsStream:是否为流式套接字的标志位，Sysfd:socket句柄，ZeroReadIsEOF；结束判定规则，这一点在我们之前也有提过在[udp](./01_webcoding_based_on_c/02_udp/04_recvfrom.c)
+中数据包中字段为0代表结束，在tcp中则被允许数据包内容为0的字段，这也是我们后续对接netpoll的具体对象，其内部维护读写锁，保证并发安全。
+* 最后我们来看一下[init](./02_go_sdk/go/src/internal/poll/fd_unix.go#L55),这个函数和我们之前在[listen](#listen-函数的内部调用)中的思路一致,在这里listen和accept殊途同归
+#### close的底层实现
