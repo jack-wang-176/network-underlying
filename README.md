@@ -1247,11 +1247,10 @@ Go Runtime 极度厌恶频繁的小对象内存分配。因此，`pollDesc` 采�
   }
   ```
 
-* [casgstatus](https://www.google.com/search?q=./02_go_sdk/go/src/runtime/proc.go%23L1105)：原子地将协程状态从运行中（Running）标记为等待中（Waiting）。
-* [dropg](https://www.google.com/search?q=./02_go_sdk/go/src/runtime/proc.go%23L4001)：彻底解绑 `mp.curg = nil` 和 `gp.m = nil`。此时 G 已经“睡”在堆上了，而 M 获得了自由。
-* **关键回调**：执行 [netpollblockcommit](https://www.google.com/search?q=./02_go_sdk/go/src/runtime/netpoll.go%23L529)，通过 `atomic.Store(gpp, gp)` 将当前 Goroutine 的内存地址填入 `pd.rg` 中。**这一步至关重要**，它相当于告诉 netpoller：“当这个 socket 有数据来时，请唤醒地址为 `gp` 的这个协程”。
-* [schedule](https://www.google.com/search?q=./02_go_sdk/go/src/runtime/proc.go%23L3839)：M 并没有休息，它立即执行 `schedule()` 去全局队列或本地队列寻找下一个待执行的 G。这就是 Go 高并发的核心秘密——**IO 阻塞的是 Goroutine，而不是系统线程**。
-你的行文逻辑已经**非常合适**。
+* [casgstatus](./02_go_sdk/go/src/runtime/proc.go#L1105)：原子地将协程状态从运行中（Running）标记为等待中（Waiting）。
+* [dropg](./02_go_sdk/go/src/runtime/proc.go#L4001)：彻底解绑 `mp.curg = nil` 和 `gp.m = nil`。此时 G 已经“睡”在堆上了，而 M 获得了自由。
+* **关键回调**：执行 [netpollblockcommit](./02_go_sdk/go/src/runtime/netpoll.go#L529)，通过 `atomic.Store(gpp, gp)` 将当前 Goroutine 的内存地址填入 `pd.rg` 中。**这一步至关重要**，它相当于告诉 netpoller：“当这个 socket 有数据来时，请唤醒地址为 `gp` 的这个协程”。
+* [schedule](./02_go_sdk/go/src/runtime/proc.go#L3839)：M 并没有休息，它立即执行 `schedule()` 去全局队列或本地队列寻找下一个待执行的 G。这就是 Go 高并发的核心秘密——**IO 阻塞的是 Goroutine，而不是系统线程**。
 
 #### 总结
 
