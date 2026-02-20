@@ -1090,15 +1090,15 @@ Go Runtime 极度厌恶频繁的小对象内存分配。因此，`pollDesc` 采�
 
 * 这个函数不仅仅是简单的内存分配，它确定了 Go 运行时如何看待这个网络连接：
 
-* **poll.FD**：这是核心中的核心，它充当了 Go 语言 IO 层（用户代码）和 Runtime 层（调度器）之间的桥梁。
-* **Sysfd**：保存了底层的 socket 句柄，一切操作最终都落实在这个整数上。
-* **IsStream**：标记是否为流式套接字。
-* 如果是 TCP，此值为 `true`。
-* 如果是 UDP，此值为 `false`。
+  * **poll.FD**：这是核心中的核心，它充当了 Go 语言 IO 层（用户代码）和 Runtime 层（调度器）之间的桥梁。
+  * **Sysfd**：保存了底层的 socket 句柄，一切操作最终都落实在这个整数上。
+  * **IsStream**：标记是否为流式套接字。
+  * 如果是 TCP，此值为 `true`。
+  * 如果是 UDP，此值为 `false`。
 
 
-* **ZeroReadIsEOF**：这是结束判定的关键规则。
-* 正如我们在 [udp](./01_webcoding_based_on_c/02_udp/04_recvfrom.c) 章节中提到的，UDP 允许发送 0 字节的数据包，这在 UDP 中不代表连接结束。
+  * **ZeroReadIsEOF**：这是结束判定的关键规则。
+  * 正如我们在 [udp](./01_webcoding_based_on_c/02_udp/04_recvfrom.c) 章节中提到的，UDP 允许发送 0 字节的数据包，这在 UDP 中不代表连接结束。
 * 而在 TCP 中，`read` 返回 0 字节通常意味着对端发送了 FIN 包（EOF），连接需要关闭。
 * `newFD` 会根据 `IsStream` 的值自动设置这个字段，确保上层业务逻辑能正确处理“读到 0 字节”的含义。
 
@@ -1118,7 +1118,7 @@ Go Runtime 极度厌恶频繁的小对象内存分配。因此，`pollDesc` 采�
 
 #### 4. 深入 Runtime：poll_runtime_pollWait
 
-* 进一步深入 `waitRead` 函数，我们最终通过 `//go:linkname` 链接机制，从 `internal/poll` 包跨越到了 `runtime` 包的 [poll_runtime_pollWait](https://www.google.com/search?q=./02_go_sdk/go/src/runtime/netpoll.go%23L336)。
+* 进一步深入 `waitRead` 函数，我们最终通过 `//go:linkname` 链接机制，从 `internal/poll` 包跨越到了 `runtime` 包的 [poll_runtime_pollWait](./02_go_sdk/go/src/runtime/netpoll.go#L336)。
 
 * 注意，此时我们的业务结构体已经从 `poll.FD` 转化为了 runtime 内部的 `polldesc` (poll descriptor)，这种转化依赖于结构体的映射关系。
 
@@ -1150,7 +1150,7 @@ Go Runtime 极度厌恶频繁的小对象内存分配。因此，`pollDesc` 采�
 
 #### 5. 核心阻塞逻辑：netpollblock
 
-* 接下来我们深入 [netpollbloack](https://www.google.com/search?q=./02_go_sdk/go/src/runtime/netpoll.go%23L548)，这是 Goroutine 挂起的决策中心。
+* 接下来我们深入 [netpollbloack](./02_go_sdk/go/src/runtime/netpoll.go#L548)，这是 Goroutine 挂起的决策中心。
 
   ```go
   func netpollblock(pd *pollDesc, mode int32, waitio bool) bool {
@@ -1269,3 +1269,35 @@ Go Runtime 极度厌恶频繁的小对象内存分配。因此，`pollDesc` 采�
 
 3. **高性能的秘密**：
 这就解释了为什么 Go 服务端可以用少量的系统线程支撑数万计的并发连接——**因为所有的“等待”成本都由极度廉价的 Goroutine 承担了，而昂贵的系统线程（M）始终处于高负载的有效计算状态，从未真正休息。** 这正是 Go 网络模型区别于传统多线程模型的最大护城河。
+### 数据的传输和I/O模型
+在上两节中，我们阐释了listen和accept的底层机制，在开始对read和write的底层剖析之前，先来关注一个细节`go handleConnection(conn)` `go`关键字在编译的时候被自动翻译为[newproc](./02_go_sdk/go/src/runtime/proc.go#L4874),这时候，对应函数指针和父进程pc被保存，同时调用`systemstack`函数切换到g0栈上，调用[newproc1](./02_go_sdk/go/src/runtime/proc.go#L4892)创建栈，在这个函数中，栈的返回地址被硬编码为`goexit`的地址来供自动回收同时将对应函数的地址压入栈中，因此，在这里去执行这个函数的是一个新的协程，而原本的协程不断调用accept，知道代码跑通返回对应值，注意，这时候新的连接的文件描述符已经被包装在accept的返回值中了
+
+回到[accept](./02_go_sdk/go/src/net/tcpsock_posix.go#L158)函数，之前没有提到的是，这个函数的返回值是[TCPConn](./02_go_sdk/go/src/net/tcpsock.go#L112)但在这里我们所要研究的不是独属于`tcp`的机制，而是基于连接的通用机制，即[Conn](./02_go_sdk/go/src/net/net.go#L172)下的`write`和`read`方法，这时候这个返回值封装的是连接的信息
+#### Read的底层实现
+* 我们来到`netFD`的方法[read](./02_go_sdk/go/src/net/fd_posix.go#L54)，这样一个方法出了继续向下调用外，还调用了runtime.KeepAlive(fd)防止垃圾回收器进行错误回收，防止在协程挂起等待的时候对应的 NETFD 被自动执行close方法关闭。
+* 继续来到`fd`的方法[read](./02_go_sdk/go/src/internal/poll/fd_unix.go#L141)，这样一个方法是对应网络功能的具体实现，和我们在c中提到的[recvfrom](./01_webcoding_based_on_c/05_tcp/01_client.c)操作一致
+   ```go
+   业务加锁
+   ...
+   0字节返回
+   ...
+   准备检查
+   ...
+   for {
+		n, err := ignoringEINTRIO(syscall.Read, fd.Sysfd, p)
+		if err != nil {
+			n = 0
+			if err == syscall.EAGAIN && fd.pd.pollable() {
+				if err = fd.pd.waitRead(fd.isFile); err == nil {
+					continue
+				}
+			}
+		}
+		err = fd.eofError(n, err)
+		return n, err
+	}
+   ```
+* 需要注意的是这里业务加锁是fd加锁，之前的锁是防止gc关闭连接，这里的锁是防止另一个协程错误关闭
+* 在这里go同样设置了通用的系统调用接口来屏蔽底层的einter信号，这一点和我们在c中实现的[while](./01_webcoding_based_on_c/05_tcp/06_server_epoll.c)循环思路一致。如果没有阻塞，那么read就会直接系统调用进行读数据，如果阻塞，那么调用waitread
+* 我们看到的是，到这里read方法和accept方法都汇合到了runtime层的[poll_runtime_pollWait](./02_go_sdk/go/src/runtime/netpoll.go#L336)，并且两者的mode都一致。
+#### Write的底层实现
