@@ -82,7 +82,7 @@
 
 ### 02 UDP Socket (UDP 通信)
 无连接的、不可靠的数据传输协议。
-* **[01_socket(套接字)](./01_webcoding_based_on_c/02_udp/01_socket.c)**
+* **[01_socket](./01_webcoding_based_on_c/02_udp/01_socket.c)**
     * 展示了socket套接字创建的函数
       ```c
       int socket (int __domain, int __type, int __protocol)
