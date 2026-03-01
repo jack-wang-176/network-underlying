@@ -1382,51 +1382,70 @@ Go Runtime 极度厌恶频繁的小对象内存分配。因此，`pollDesc` 采�
 
 ## 3.Rowsocket-Underlying-C
 
-### The Introduction of this part
-* 我们在之前调用send() conn.Write的时候，面对的是一连续的数据流。信息的发送和接受都是想流一样连续顺利的，只需要去在意业务实现。这种流的效果实际上来源于操作系统底层封装，在实际进行数据发送的时候数据以数据包的packet的形式进行发送，这一点在之前的项目里也有所展现。
-* 而在这里我们要关注的是当我们在[第一部分](#1socket-underlying-c)写下`socket()`这个函数并由此建立简易网络通信的时候所疏忽的内容。
-  ```
-  [5. 应用层] (Application)  --- 消息 (Message)  [HTTP, FTP]
-      |
-  [4. 传输层] (Transport)    --- 数据段 (Segment)  [TCP, UDP]
-      |
-  [3. 网络层] (Network)      --- 数据包 (Packet)   [IP, ICMP]
-      |
-  [2. 链路层] (Data Link)    --- 帧 (Frame)      [Ethernet, MAC]
-      |
-  [1. 物理层] (Physical)     --- 比特 (Bit)      [网线, 光纤]
-  ```
-* 这是为人所熟知的网络分层架构，在我们调用这个函数的时候，实际上处理的是传输层的网络结构，往上去到应用层我们在第二节和adding部分已经介绍完毕，在这个部分中，我们来介绍第3，4层，并展现处和上层业务逻辑截然不同的部分，不依靠结构体业务逻辑的搭建来实现web功能，而是依靠最基础也是最让人恼火的字节拼装来实现网络功能的层级封装(这一点在[tftp](#03-tftp-implementation-tftp-协议实现)一节中部分体现)。
-* 想要深入底层，那么原先的起点，直接在socket里面去指定传输层数据形式选项就不能在用,我们转而使用[raosocket](./03_rawsocket_underlying_c/01_introductionc/01_rawsocket.c)。
-* 回顾之前的内容,[02](#02-udp-socket-udp-通信)
-  ```c
-        int socket (int __domain, int __type, int __protocol)
-        ```
-  ```
-* 第一个参数，在之前的代码中我们一直在使用AF_INET这个参数，在使用这个参数时由OS 负责 ARP 解析、路由表查找、封装 MAC 头和 IP 头，为了获取原始数据包，我们在这里使用AF_PACKET，这是os直接将网卡接收到的数字信号转给用户
-* 第二个参数，我们特别地指定sock-raw
-* 第三个参数，这个参数代表着对应socket处理的数据类型，在之前的示例中，我们将这个参数直接设置为0,表示由操作系统区推导socket执行的协议类型，而在这里我们用htons(EHT_P_ALL)这行代码，代表所有协议的数据包我们都去处理。需要注意的是，网络字节序和主机字节序只在多字节以及需要进行网络和主机间的通信的时候才需要进行转化，在这里os将比对最后这个参数和数据包类型并决定是否放行。
-* 现在我们已经有了最核心的工具来去一窥数据包的底层套接，但是在这里我们去试图理解通用数据包的封装流程，尽管我们已经能够拿到所有的底层数据包，但是这些数据包依旧是局限于目标于当前设备mac地址的数据包，为了能更好的进行演示和后续学习(抓到一些广播和多播包)我们还要开启混杂模式，让网卡在接受到不属于自己mac地址的包的时候并不直接抛弃。
-* 在这个文件[02_promiscuous.c](./03_rawsocket_underlying_c/01_introduction/02_promiscuous.c)中我们展现了是如何使用标志位和系统调用调用系统层面的操作的，在进行详细讲解之前，你可以注意到，在这里ioctl这个核心的系统调用操作中我们也传入了raw_socket，在这里，我们使用raw_socket来作为和系统通信的通道
-      ```c
-      extern int ioctl (int __fd, unsigned long int __request, ...) __THROW;
-      ```
-* __fd 是和系统进行通信的socket的文件句柄，需要注意的是，在这里传入不同的文件描述符会使操作系统处理不同的底层部件，如果你传的是一个文件的 fd，内核会把 ioctl 转发给文件系统（ext4 等），当你传入一个 Socket 的 fd（比如我们的 raw_sock）时，os就会立刻把这个 ioctl 请求转交给 Linux 的网络子系统（Network Stack），所以在这里我们即使是传入tcp和udp的socket也能达到相似效果/
-* 而在这里的request代表执行的宏定义，具体宏包含在<net/if.h>中，SIOCGIFFLAGS (Get)：Socket I/O Control, Get Interface Flags，这个宏将网卡的设置取出并存储在对应的网络结构体，SIOCSIFFLAGS (Set)：Socket I/O Control, Set Interface Flags，这个宏将网卡的设置信息写入
-* 这个函数最后一个参数是一个可变参数，因为ioctl一个绕过常规数据流、直接向硬件设备驱动下发专属命令（Magic Codes）的后门通道，可以处理多个操作系统模块，每一个模块都由不同的结构体对应。在网络子系统中我们使用ifreq来进行系统和网卡的通信，
-   ```C
-    struct ifreq {
-        char ifr_name[IFNAMSIZ]; /* Interface name, e.g. "eth0" */
-        union {
-            struct sockaddr ifru_addr;    // 用来装 IP 地址
-            struct sockaddr ifru_hwaddr;  // 用来装 MAC 地址
-            short           ifru_flags;   // 用来装 状态标志位 (如混杂模式)
-            int             ifru_mtu;     // 用来装 MTU (最大传输单元)
-            // ... 还有很多其他硬件参数
-        } ifr_ifru;
-    };
-    #define ifr_flags   ifr_ifru.ifru_flags
-    #define ifr_hwaddr  ifr_ifru.ifru_hwaddr
-   ```
-* 这是一个极为简化的ifreq结构体，如果你想进一步研究可以去看[ifreq](./03_rawsocket_underlying_c/01_introduction/03_ifreq.c),在这里进行储存数据采用了union进行储存，使得数据存储极为高效，因为当你调用ioctl进行操作的时候肯定是单个状态位进行操作，所以没有必要维护庞大的struct数据结构，而为了用户便于操作，设计者在底层封装了宏达到了类似结构体的用户体验。而我们最后一个参数就是填入相应操作的对应宏
-* 至此我们已经开启了底层网络通信的大门。在后续我们将依靠原始套接字来分析数据包构成并尝试自己组包发送数据包
+### 01 Bypass the Protocol Stack (越过协议栈：原始套接字的越权宣告)
+
+* **从“流”到“帧”的认知降维**：
+在 [Part 1](#part-1-socket-underlying-c) 的 C 语言 TCP 通信和 [Part 2](#part-2-netpoll-underlying-go) 的 Go 语言 `netpoll` 解析中，我们调用 `send()` 或 `conn.Write()` 时，面对的始终是一个平滑、连续的**数据流（Stream）**。我们之所以能把网络通信当成读写本地文件一样简单，完全得益于操作系统内核与 Go Runtime 在底层的重重封装。
+但真实的物理网络中不存在“流”。在网线中穿梭的，是一个个被严格切割、包裹的离散**数据帧（Frame）**。
+```text
+[5. 应用层] (Application)  --- 消息 (Message)  [HTTP, FTP] 
+    |
+[4. 传输层] (Transport)    --- 数据段 (Segment)  [TCP, UDP]   <-- Part 1 & 2 的主要操作边界
+    |
+[3. 网络层] (Network)      --- 数据包 (Packet)   [IP, ICMP]
+    |
+[2. 链路层] (Data Link)    --- 帧 (Frame)      [Ethernet, MAC] <-- 本节 Raw Socket 的接管边界
+    |
+[1. 物理层] (Physical)     --- 比特 (Bit)      [网线, 光纤]
+
+```
+
+
+* **打破黑盒：为什么需要 Raw Socket？**
+当我们使用常规的 `AF_INET` 创建套接字时，操作系统全权代劳了 ARP 解析、路由查找、以及 MAC/IP/TCP 包头的拼接。为了亲眼观察甚至手工拼接这些底层的二进制字节，常规的 Socket API 已经无法满足需求。因此，在 [01_rawsocket.c](./03_rawsocket_underlying_c/01_introductionc/01_rawsocket.c) 中，我们转而使用极具破坏力与掌控力的**原始套接字（Raw Socket）**：
+```c
+int raw_sock = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+
+```
+
+
+* **参数 1: 从 `AF_INET` 到 `AF_PACKET**`：这是一个底层深入。`AF_INET` 局限于网络层及以上，而 `AF_PACKET` 直接作用于数据链路层。OS 不再为你剥离以太网帧头，而是将网卡收到的原始电信号转化为字节流后，原封不动地甩给你。
+* **参数 2: `SOCK_RAW**`：明确声明我们需要绕过协议栈的原始报文数据。
+* **参数 3: `htons(ETH_P_ALL)**`：在之前的章节中，我们将此参数设为 `0`，意为“让 OS 自动推导协议”。但在链路层，网卡只认识二进制比特的，没有默认协议可言。`ETH_P_ALL` 是一道终极指令，不加过滤的处理所有协议的网络帧
+*(注意：网络中传输的是大端序，必须套上 `htons` 转换，否则网卡硬件匹配时会因字节序错乱而拦截失败。同时还是因为这里是多个字节进行比对。如果是单个字节则不需要进行这种转化，在之后的示例中你会看到这一点)*
+
+
+* **对抗网卡的物理本能：混杂模式（Promiscuous Mode）**
+拿到原始套接字权限后，我们还面临一个物理障碍：网卡硬件默认是极度自私的，它会自动丢弃目的 MAC 地址不是自己的单播包。为了能截获局域网内的广播、多播甚至其他设备的包（拓展我们的数据样本），我们必须剥夺网卡的过滤机制，强迫其进入**混杂模式**。
+在 [02_promiscuous.c](./03_rawsocket_underlying_c/01_introduction/02_promiscuous.c) 中，我们展现了如何通过经典的“读-改-写”机制调用底层硬件：
+```c
+extern int ioctl (int __fd, unsigned long int __request, ...) __THROW;
+
+```
+
+
+* **`__fd`**：Linux 贯彻“一切皆文件”的哲学。你不能直接对字符串 `"eth0"` 发号施令，你必须传入一个合法的文件描述符。当我们把刚才创建的 `raw_sock` 传进去时，内核一看是网络句柄，就会立刻将这个 `ioctl` 请求转交给网络设备子系统（Network Device Subsystem）。*(实际上，传入任何一个普通的 TCP/UDP socket 都能达到相同的路由效果，这里用 raw_sock 纯粹是就地取材。)*
+* **`__request`**：`SIOCGIFFLAGS` (Get) 用于将网卡当前状态读取出来；`SIOCSIFFLAGS` (Set) 用于将我们修改后的状态硬性写入硬件。
+
+
+* **极致的内存复用：`struct ifreq**`
+`ioctl` 的最后一个参数是可变参数。在网络子系统中，我们使用 `ifreq` 结构体作为与内核通信的“标准公文包”：
+```c
+struct ifreq {
+    char ifr_name[IFNAMSIZ]; /* Interface name, e.g. "eth0" */
+    union {
+        struct sockaddr ifru_addr;    // 用来装 IP 地址 (16字节)
+        struct sockaddr ifru_hwaddr;  // 用来装 MAC 地址 (16字节)
+        short           ifru_flags;   // 用来装 状态标志位 (2字节)
+        int             ifru_mtu;     // 用来装 MTU (4字节)
+    } ifr_ifru;
+};
+#define ifr_flags   ifr_ifru.ifru_flags
+#define ifr_hwaddr  ifr_ifru.ifru_hwaddr
+
+```
+
+这完美展现了内核开发者对内存的极致压榨：通过 `union`（联合体），让 IP、MAC、标志位等几十种截然不同的参数，强行共享同一块 16 字节的内存。内核如何区分这块内存里现在装的是什么？靠的就是你传给 `ioctl` 的命令宏。同时，底层的 `#define` 语法糖巧妙隐藏了内部复杂的联合体嵌套，为应用层提供了清爽近似结构体的调用体验。
+
+**至此，我们已经成功越过了操作系统协议栈的层层封装，并拿到了底层网卡的最高物理控制权。在接下来的小节中，我们将直面网卡抛上来的原始字节流，体验 C 语言最暴力的“指针强转”解析法。**
+---
