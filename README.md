@@ -40,6 +40,8 @@
 - [06 Data transmission and I/O models（数据的传输和io模型）](#数据的传输和io模型)
 - [07 Summary(总结))](#总结)
 ---
+### [Part 3: Rawsocket-Underlying-C](#3rowsocket-underlying-c)
+- [01 Preparation for a Deep Dive into the Protocol Stack](#深入协议栈的准备)
 
 ## 详细介绍 (Introduction)
 
@@ -1382,7 +1384,7 @@ Go Runtime 极度厌恶频繁的小对象内存分配。因此，`pollDesc` 采�
 
 ## 3.Rowsocket-Underlying-C
 
-### 01 Bypass the Protocol Stack (越过协议栈：原始套接字的越权宣告)
+### 深入协议栈的准备
 
 * **从“流”到“帧”的认知降维**：
 在 [Part 1](#part-1-socket-underlying-c) 的 C 语言 TCP 通信和 [Part 2](#part-2-netpoll-underlying-go) 的 Go 语言 `netpoll` 解析中，我们调用 `send()` 或 `conn.Write()` 时，面对的始终是一个平滑、连续的**数据流（Stream）**。我们之所以能把网络通信当成读写本地文件一样简单，完全得益于操作系统内核与 Go Runtime 在底层的重重封装。
