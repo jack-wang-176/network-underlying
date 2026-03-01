@@ -31,6 +31,7 @@
 - [03 TFTP Implementation (TFTP 协议实现)](#03-tftp-implementation-tftp-协议实现)
 - [04 Broadcast & Multicast (广播与多播)](#04-broadcast--multicast-广播与多播)
 - [05 TCP Socket (TCP 通信)](#05-tcp-socket-tcp-通信)
+
 ### [Part 2: Netpoll-Underlying-Go](#netpoll-underlying-go)
 - [01 The Goal of This Part(本节目标)](#本节目标-the-goal-of-this-part)
 - [02 Sample Code Dissection & netpoll Internals Overview(示例代码具体拆解与底层 `netpoll` 机制概览)](#示例代码具体拆解与底层-netpoll-机制概览)
@@ -39,7 +40,7 @@
 - [05 Underlying implementation of Accept(accept-的底层实现)](#accept-的底层实现)
 - [06 Data transmission and I/O models（数据的传输和io模型）](#数据的传输和io模型)
 - [07 Summary(总结))](#总结)
----
+
 ### [Part 3: Rawsocket-Underlying-C](#3rowsocket-underlying-c)
 - [01 Preparation for a Deep Dive into the Protocol Stack](#深入协议栈的准备)
 
@@ -1389,26 +1390,24 @@ Go Runtime 极度厌恶频繁的小对象内存分配。因此，`pollDesc` 采�
 * **从“流”到“帧”的认知降维**：
 在 [Part 1](#part-1-socket-underlying-c) 的 C 语言 TCP 通信和 [Part 2](#part-2-netpoll-underlying-go) 的 Go 语言 `netpoll` 解析中，我们调用 `send()` 或 `conn.Write()` 时，面对的始终是一个平滑、连续的**数据流（Stream）**。我们之所以能把网络通信当成读写本地文件一样简单，完全得益于操作系统内核与 Go Runtime 在底层的重重封装。
 但真实的物理网络中不存在“流”。在网线中穿梭的，是一个个被严格切割、包裹的离散**数据帧（Frame）**。
-```text
-[5. 应用层] (Application)  --- 消息 (Message)  [HTTP, FTP] 
-    |
-[4. 传输层] (Transport)    --- 数据段 (Segment)  [TCP, UDP]   <-- Part 1 & 2 的主要操作边界
-    |
-[3. 网络层] (Network)      --- 数据包 (Packet)   [IP, ICMP]
-    |
-[2. 链路层] (Data Link)    --- 帧 (Frame)      [Ethernet, MAC] <-- 本节 Raw Socket 的接管边界
-    |
-[1. 物理层] (Physical)     --- 比特 (Bit)      [网线, 光纤]
+  ```text
+  [5. 应用层] (Application)  --- 消息 (Message)  [HTTP, FTP] 
+      |
+  [4. 传输层] (Transport)    --- 数据段 (Segment)  [TCP, UDP]   <-- Part 1 & 2 的主要操作边界
+      |
+  [3. 网络层] (Network)      --- 数据包 (Packet)   [IP, ICMP]
+      |
+  [2. 链路层] (Data Link)    --- 帧 (Frame)      [Ethernet, MAC] <-- 本节 Raw Socket 的接管边界
+      |
+  [1. 物理层] (Physical)     --- 比特 (Bit)      [网线, 光纤]
+  ```
 
-```
 
-
-* **打破黑盒：为什么需要 Raw Socket？**
-当我们使用常规的 `AF_INET` 创建套接字时，操作系统全权代劳了 ARP 解析、路由查找、以及 MAC/IP/TCP 包头的拼接。为了亲眼观察甚至手工拼接这些底层的二进制字节，常规的 Socket API 已经无法满足需求。因此，在 [01_rawsocket.c](./03_rawsocket_underlying_c/01_introductionc/01_rawsocket.c) 中，我们转而使用极具破坏力与掌控力的**原始套接字（Raw Socket）**：
-```c
-int raw_sock = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
-
-```
+* **为什么需要 Raw Socket？**
+当我们使用常规的 `AF_INET` 创建套接字时，操作系统全权代劳了 ARP 解析、路由查找、以及 MAC/IP/TCP 包头的拼接。为了亲眼观察甚至手工拼接这些底层的二进制字节，常规的 Socket API 已经无法满足需求。因此，在 [01_rawsocket.c](./03_rawsocket_underlying_c/01_Preparation%20for%20a%20Deep%20Dive%20into%20the%20Protocol%20Stack/01_rawsocket.c)中，我们转而使用极具破坏力与掌控力的**原始套接字（Raw Socket）**：
+  ```c
+  int raw_sock = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+  ```
 
 
 * **参数 1: 从 `AF_INET` 到 `AF_PACKET**`：这是一个底层深入。`AF_INET` 局限于网络层及以上，而 `AF_PACKET` 直接作用于数据链路层。OS 不再为你剥离以太网帧头，而是将网卡收到的原始电信号转化为字节流后，原封不动地甩给你。
@@ -1417,37 +1416,94 @@ int raw_sock = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
 *(注意：网络中传输的是大端序，必须套上 `htons` 转换，否则网卡硬件匹配时会因字节序错乱而拦截失败。同时还是因为这里是多个字节进行比对。如果是单个字节则不需要进行这种转化，在之后的示例中你会看到这一点)*
 
 
-* **对抗网卡的物理本能：混杂模式（Promiscuous Mode）**
+* **混杂模式（Promiscuous Mode）**
 拿到原始套接字权限后，我们还面临一个物理障碍：网卡硬件默认是极度自私的，它会自动丢弃目的 MAC 地址不是自己的单播包。为了能截获局域网内的广播、多播甚至其他设备的包（拓展我们的数据样本），我们必须剥夺网卡的过滤机制，强迫其进入**混杂模式**。
-在 [02_promiscuous.c](./03_rawsocket_underlying_c/01_introduction/02_promiscuous.c) 中，我们展现了如何通过经典的“读-改-写”机制调用底层硬件：
-```c
-extern int ioctl (int __fd, unsigned long int __request, ...) __THROW;
+在 [02_promiscuous.c](./03_rawsocket_underlying_c/01_Preparation%20for%20a%20Deep%20Dive%20into%20the%20Protocol%20Stack/02_promiscuous.c) 中，我们展现了如何通过经典的“读-改-写”机制调用底层硬件：
+  ```c
+  extern int ioctl (int __fd, unsigned long int __request, ...) __THROW;
+  ```
 
-```
 
-
-* **`__fd`**：Linux 贯彻“一切皆文件”的哲学。你不能直接对字符串 `"eth0"` 发号施令，你必须传入一个合法的文件描述符。当我们把刚才创建的 `raw_sock` 传进去时，内核一看是网络句柄，就会立刻将这个 `ioctl` 请求转交给网络设备子系统（Network Device Subsystem）。*(实际上，传入任何一个普通的 TCP/UDP socket 都能达到相同的路由效果，这里用 raw_sock 纯粹是就地取材。)*
+* **`__fd`**：Linux 贯彻“一切皆文件”的哲学。你不能直接对字符串 `"eth0"` 发号施令，你必须传入一个合法的文件描述符。当我们把刚才创建的 `raw_sock` 传进去时，内核一看是网络句柄，就会立刻将这个 `ioctl` 请求转交给网络设备子系统（Network Device Subsystem）。*(实际上，传入任何一个普通的 TCP/UDP socket 都能达到相同的路由效果，这里用 raw_sock 纯粹是就地取材。)*更进一步，`iotcl`的作用并非局限于网络子系统，而是`linux`开发者设计的）一个绕过常规数据流、直接向硬件设备驱动下发专属命令（Magic Codes）的后门通道,通过传入其他类型的文件描述符我们也能操作其他子系统
 * **`__request`**：`SIOCGIFFLAGS` (Get) 用于将网卡当前状态读取出来；`SIOCSIFFLAGS` (Set) 用于将我们修改后的状态硬性写入硬件。
 
 
 * **极致的内存复用：`struct ifreq**`
-`ioctl` 的最后一个参数是可变参数。在网络子系统中，我们使用 `ifreq` 结构体作为与内核通信的“标准公文包”：
-```c
-struct ifreq {
-    char ifr_name[IFNAMSIZ]; /* Interface name, e.g. "eth0" */
-    union {
-        struct sockaddr ifru_addr;    // 用来装 IP 地址 (16字节)
-        struct sockaddr ifru_hwaddr;  // 用来装 MAC 地址 (16字节)
-        short           ifru_flags;   // 用来装 状态标志位 (2字节)
-        int             ifru_mtu;     // 用来装 MTU (4字节)
-    } ifr_ifru;
-};
-#define ifr_flags   ifr_ifru.ifru_flags
-#define ifr_hwaddr  ifr_ifru.ifru_hwaddr
+* `ioctl` 的最后一个参数是可变参数。在网络子系统中，我们使用 `ifreq` 结构体作为与内核通信的“标准公文包”：
+  ```c
+  //这里是简化版本
+  struct ifreq {
+      char ifr_name[IFNAMSIZ]; /* Interface name, e.g. "eth0" */
+      union {
+          struct sockaddr ifru_addr;    // 用来装 IP 地址 (16字节)
+          struct sockaddr ifru_hwaddr;  // 用来装 MAC 地址 (16字节)
+          short           ifru_flags;   // 用来装 状态标志位 (2字节)
+          int             ifru_mtu;     // 用来装 MTU (4字节)
+      } ifr_ifru;
+  };
+  #define ifr_flags   ifr_ifru.ifru_flags
+  #define ifr_hwaddr  ifr_ifru.ifru_hwaddr
+  ```
 
+* 这完美展现了内核开发者对内存的极致压榨：通过 `union`（联合体），让 IP、MAC、标志位等几十种截然不同的参数，强行共享同一块 16 字节的内存。内核如何区分这块内存里现在装的是什么？靠的就是你传给 `ioctl` 的命令宏。同时，底层的 `#define` 语法糖巧妙隐藏了内部复杂的联合体嵌套，为应用层提供了清爽近似结构体的调用体验。(这个文件是`ifreq`的全面实现[ifreq](./03_rawsocket_underlying_c/01_Preparation%20for%20a%20Deep%20Dive%20into%20the%20Protocol%20Stack/03_ifreq.c))
+
+* **至此，我们已经成功越过了操作系统协议栈的层层封装，并拿到了底层网卡的最高物理控制权。在接下来的小节中，我们将直面网卡抛上来的原始字节流，体验 C 语言最暴力的“指针强转”解析法。**
+
+### 指针强转与解封装
+
+在开始之前我们需要对网络数据包做一个更深入的解析，在之前的示例中，只需要简单的使用sendto,recvfrom就可以进行网络通信，这个时候我们直接发送和得到了自己想要的数据。但是如果你有一定的web开发经验的话，你会知道数据包的传递不只有数据内容，还有数据头，比如token就是通过数据包头传递并进行校验的。尽管在这里我们所要讨论的不是在成熟协议栈基础上的网络应用，但是在上述操作的时候，操作系统和web开发人员的操作目的极为相似，让用户感受不到有所谓的数据头。而在拥有rawsocket之后，我们处理的数据包是一串包含数据头和数据内容的裸字符串。我们首先要去认识的就是这些裸字符串是如何精细的组合在一起并在网络五层结构体系流转的同时进行逐级封装的
+```text
++-----------------------------------------------------------------------+
+|                       物理层 (Physical Layer) 网线中的电信号/光信号      |
++-----------------------------------------------------------------------+
+                              | (网卡接收并转化为二进制字节流)
+                              V
++=======================================================================+
+| L2 链路层头 | L3 网络层头 | L4 传输层头 |      L5 应用层数据 (Payload)     |
+| (Ethernet) |   (IP)     | (TCP/UDP)  | (HTTP, FTP, 或你的一段纯文本)    |
++=======================================================================+
+|<- 14 Bytes->|<-20 Bytes->|<-20 Bytes->|<- 剩下的全都是应用层数据区 ------->|
+|                          |            |                               |
+|---(我们当前所在的位置)      |            |                               |
 ```
+我们在这里采用了最容易理解的方式来表示数据头的构成。在我们第一部分的例子中，应用层数据进行发送的时候，会向下逐渐进行封装
+下面这张图展示了应用层数据是如何一步步被包裹成一个以太网物理帧（Ethernet Frame）的：
+```text
+================================================================================
+数据包的“俄罗斯套娃”封装过程 (The Encapsulation Process)
+================================================================================
 
-这完美展现了内核开发者对内存的极致压榨：通过 `union`（联合体），让 IP、MAC、标志位等几十种截然不同的参数，强行共享同一块 16 字节的内存。内核如何区分这块内存里现在装的是什么？靠的就是你传给 `ioctl` 的命令宏。同时，底层的 `#define` 语法糖巧妙隐藏了内部复杂的联合体嵌套，为应用层提供了清爽近似结构体的调用体验。
+1. 应用层 (Application Layer)
+   产生纯粹的业务数据。
+   +-------------------------------------------------------------------------+
+   |                       Application Data (HTTP / FTP / 自定义报文)          |
+   +-------------------------------------------------------------------------+
+                                 |
+                                 V (向下传递)
 
-**至此，我们已经成功越过了操作系统协议栈的层层封装，并拿到了底层网卡的最高物理控制权。在接下来的小节中，我们将直面网卡抛上来的原始字节流，体验 C 语言最暴力的“指针强转”解析法。**
----
+2. 传输层 (Transport Layer - L4)
+   加上源/目的端口号，确定要交给哪个进程。
+   +-------------------+-----------------------------------------------------+
+   | TCP/UDP Header    |               Application Data                      |
+   +-------------------+-----------------------------------------------------+
+                                 |
+                                 V (向下传递)
+
+3. 网络层 (Network Layer - L3)
+   加上源/目的 IP 地址，确定要交给世界上的哪台主机。
+   +-------------------+-------------------+---------------------------------+
+   |    IP Header      | TCP/UDP Header    |         Application Data        |
+   +-------------------+-------------------+---------------------------------+
+                                 |
+                                 V (向下传递)
+
+4. 链路层 (Data Link Layer - L2)
+   加上源/目的 MAC 地址，确定要交给局域网内的哪块网卡。
+   +-------------------+-------------------+-------------------+-------------+
+   | Ethernet Header   |    IP Header      | TCP/UDP Header    | Payload ... |
+   +-------------------+-------------------+-------------------+-------------+
+```
+现在我们理解了网络五层模型并非完全学术化的抽象，而是在网络发送过程中的实际运行抽象，每一层都对应实现相关功能的协议，给是上层的设计基础，最终最顶层构成计算机网络面向实际功能的接口，这些接口互相联系共同构建了计算机网络的大体系
+
+在本节中我们主要是一步一步对获取到的完全体数据包通过指针强转和解封装的方式进行解析
+#### Ethernet II 数据头的解析
