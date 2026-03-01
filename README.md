@@ -1409,5 +1409,24 @@ Go Runtime 极度厌恶频繁的小对象内存分配。因此，`pollDesc` 采�
 * 现在我们已经有了最核心的工具来去一窥数据包的底层套接，但是在这里我们去试图理解通用数据包的封装流程，尽管我们已经能够拿到所有的底层数据包，但是这些数据包依旧是局限于目标于当前设备mac地址的数据包，为了能更好的进行演示和后续学习(抓到一些广播和多播包)我们还要开启混杂模式，让网卡在接受到不属于自己mac地址的包的时候并不直接抛弃。
 * 在这个文件[02_promiscuous.c](./03_rawsocket_underlying_c/01_introduction/02_promiscuous.c)中我们展现了是如何使用标志位和系统调用调用系统层面的操作的，在进行详细讲解之前，你可以注意到，在这里ioctl这个核心的系统调用操作中我们也传入了raw_socket，在这里，我们使用raw_socket来作为和系统通信的通道
       ```c
-      
+      extern int ioctl (int __fd, unsigned long int __request, ...) __THROW;
       ```
+* __fd 是和系统进行通信的socket的文件句柄，需要注意的是，在这里传入不同的文件描述符会使操作系统处理不同的底层部件，如果你传的是一个文件的 fd，内核会把 ioctl 转发给文件系统（ext4 等），当你传入一个 Socket 的 fd（比如我们的 raw_sock）时，os就会立刻把这个 ioctl 请求转交给 Linux 的网络子系统（Network Stack），所以在这里我们即使是传入tcp和udp的socket也能达到相似效果/
+* 而在这里的request代表执行的宏定义，具体宏包含在<net/if.h>中，SIOCGIFFLAGS (Get)：Socket I/O Control, Get Interface Flags，这个宏将网卡的设置取出并存储在对应的网络结构体，SIOCSIFFLAGS (Set)：Socket I/O Control, Set Interface Flags，这个宏将网卡的设置信息写入
+* 这个函数最后一个参数是一个可变参数，因为ioctl一个绕过常规数据流、直接向硬件设备驱动下发专属命令（Magic Codes）的后门通道，可以处理多个操作系统模块，每一个模块都由不同的结构体对应。在网络子系统中我们使用ifreq来进行系统和网卡的通信，
+   ```C
+    struct ifreq {
+        char ifr_name[IFNAMSIZ]; /* Interface name, e.g. "eth0" */
+        union {
+            struct sockaddr ifru_addr;    // 用来装 IP 地址
+            struct sockaddr ifru_hwaddr;  // 用来装 MAC 地址
+            short           ifru_flags;   // 用来装 状态标志位 (如混杂模式)
+            int             ifru_mtu;     // 用来装 MTU (最大传输单元)
+            // ... 还有很多其他硬件参数
+        } ifr_ifru;
+    };
+    #define ifr_flags   ifr_ifru.ifru_flags
+    #define ifr_hwaddr  ifr_ifru.ifru_hwaddr
+   ```
+* 这是一个极为简化的ifreq结构体，如果你想进一步研究可以去看[ifreq](./03_rawsocket_underlying_c/01_introduction/03_ifreq.c),在这里进行储存数据采用了union进行储存，使得数据存储极为高效，因为当你调用ioctl进行操作的时候肯定是单个状态位进行操作，所以没有必要维护庞大的struct数据结构，而为了用户便于操作，设计者在底层封装了宏达到了类似结构体的用户体验。而我们最后一个参数就是填入相应操作的对应宏
+* 至此我们已经开启了底层网络通信的大门。在后续我们将依靠原始套接字来分析数据包构成并尝试自己组包发送数据包
