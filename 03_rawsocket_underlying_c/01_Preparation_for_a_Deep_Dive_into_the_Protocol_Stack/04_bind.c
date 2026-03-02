@@ -30,7 +30,7 @@ int main(int argc, char *argv){
     sll.sll_family = AF_PACKET;
     sll.sll_protocol = htons(ETH_P_ALL);
     sll.sll_ifindex = eth0_index;
-    if((bind(raw_socket,&sll,sizeof(sll)))<0){
+    if((bind(raw_socket,(struct sockaddr *)&sll,sizeof(sll)))<0){
         perror("fail to bind");
         exit(1);
     }

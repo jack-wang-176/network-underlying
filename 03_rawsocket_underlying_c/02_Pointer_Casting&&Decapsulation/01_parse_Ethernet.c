@@ -9,6 +9,7 @@
 #include<netinet/ether.h>
 #include<net/if.h>
 #include<linux/if_ether.h>
+#include<linux/if_packet.h>
 
 int main(int argc,char *argv[]){
     int raw_socket;
@@ -17,14 +18,29 @@ int main(int argc,char *argv[]){
         exit(1);
     }
     struct ifreq ifr;
+    memset(&ifr,0,sizeof(ifr));
     strncpy(ifr.ifr_name,"eth0",IFNAMSIZ-1);
+    if((ioctl(raw_socket,SIOCGIFINDEX,&ifr))<0){
+        perror("fail to get eth0 index");
+        exit(1);
+    }
+    struct sockaddr_ll sll;
+    memset(&sll,0,sizeof(sll));
+    sll.sll_family = AF_PACKET;
+    sll.sll_protocol = htons(ETH_P_ALL);
+    sll.sll_ifindex = ifr.ifr_ifindex;
+    if((bind(raw_socket,(struct sockaddr *)&sll,sizeof(sll)))<0){
+        perror("fail to bind");
+        exit(1);
+    }
+
     if((ioctl(raw_socket,SIOCGIFFLAGS,&ifr))<0){
-        perror("iotcl");
+        perror("ioctl");
         exit(1);
     }
     ifr.ifr_flags |= IFF_PROMISC;
     if((ioctl(raw_socket,SIOCSIFFLAGS,&ifr))<0){
-        perror("iotcl");
+        perror("ioctl");
         exit(1);
     }
     unsigned char buffer[65536];
