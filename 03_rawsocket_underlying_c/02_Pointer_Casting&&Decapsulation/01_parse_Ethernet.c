@@ -18,12 +18,12 @@ int main(int argc,char *argv[]){
     }
     struct ifreq ifr;
     strncpy(ifr.ifr_name,"eth0",IFNAMSIZ-1);
-    if((iotcl(raw_socket,SIOCGIFFLAGS,&ifr))<0){
+    if((ioctl(raw_socket,SIOCGIFFLAGS,&ifr))<0){
         perror("iotcl");
         exit(1);
     }
     ifr.ifr_flags |= IFF_PROMISC;
-    if((iotcl(raw_socket,SIOCSIFFLAGS,&ifr))<0){
+    if((ioctl(raw_socket,SIOCSIFFLAGS,&ifr))<0){
         perror("iotcl");
         exit(1);
     }
@@ -36,8 +36,8 @@ int main(int argc,char *argv[]){
         }
         struct ethhdr *eth = (struct ethhdr*)buffer;
         printf("\n=== Captured Packet (Total Size: %d bytes) ===\n", data_size);
-        printf("Dest Mac : %02x %02x %02x %02x %02x %02x\n",eth->h_dest[0],eth->h_dest[1],eth->h_dest[2],eth->h_dest[3],eth->h_dest[4],eth->h_dest[5],eth->h_dest[6]);
-
+        printf("Dest Mac : %02x %02x %02x %02x %02x %02x\n",eth->h_dest[0],eth->h_dest[1],eth->h_dest[2],eth->h_dest[3],eth->h_dest[4],eth->h_dest[5]);
+        printf("Source MAC : %02x:%02x:%02x:%02x:%02x:%02x\n",eth->h_source[0], eth->h_source[1], eth->h_source[2],eth->h_source[3], eth->h_source[4], eth->h_source[5]);
         unsigned short protocol_type =ntohs(eth->h_proto);
         switch (protocol_type){
             case ETH_P_IP:
@@ -47,7 +47,7 @@ int main(int argc,char *argv[]){
                 printf("Arp Protocol\n");
                 break;
             case ETH_P_IPV6:
-                printf("ipv4 protocol\n");
+                printf("ipv6 protocol\n");
                 break;
             default:
                 printf("Other Protocol\n");

@@ -10,7 +10,7 @@
 
 int main(int argc,char *argv[]){
     int raw_sockfd;
-    if((raw_sockfd = socket(AF_PACKET,SOCK_RAW,htons(ETH_P_ALL))<0)){
+    if((raw_sockfd = socket(AF_PACKET,SOCK_RAW,htons(ETH_P_ALL)))<0){
         perror("fail to create raw socket");
         exit(1);
     }
