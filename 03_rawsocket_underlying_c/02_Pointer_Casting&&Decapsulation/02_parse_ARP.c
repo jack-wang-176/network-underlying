@@ -67,7 +67,7 @@ int main(int argc, char*argv[]){
                break;
         }
         struct ether_arp *arp = (struct ether_arp*)(buf + sizeof(struct ethhdr));
-        unsigned short opcode = arp->ea_hdr.ar_op;
+        unsigned short opcode = htons(arp->ea_hdr.ar_op);
         switch(opcode){
             case ARPOP_REPLY:
               printf("arp reply");
