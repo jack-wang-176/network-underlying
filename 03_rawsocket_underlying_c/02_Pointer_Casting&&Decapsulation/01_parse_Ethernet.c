@@ -68,8 +68,7 @@ int main(int argc,char *argv[]){
             default:
                 printf("Other Protocol\n");
                 break;
-        }
-       
+        } 
     }
     close(raw_socket);
     return 0;
