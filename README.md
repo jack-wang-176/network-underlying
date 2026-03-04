@@ -1707,4 +1707,9 @@ Go Runtime 极度厌恶频繁的小对象内存分配。因此，`pollDesc` 采�
   * Source / Destination Port (源/目的端口)：各占16字节，因此最大的值位65535，这是系统区分通信进程的唯一标识//既然这样那么pcb的id是什么，解释一下和pcb的联系
   * Data Offset：和ip头中的ihl功能相同，告诉我们tcp报头的长度，单位也是4字节
   * Flags：用于构建tcp三次握手和四次挥手的字段，和标识除了通信意外的tcp功能字段。用于正确的建立和断开连接：SYN (Synchronize)：发起连接。ACK (Acknowledgment)：确认收到数据。FIN (Finish)：优雅地关闭连接。RST (Reset)：暴力重置/拒绝连接。SH (Push)：催促接收方内核尽快把数据交给应用层进程
-  * 
+  * 现在我们来看到代码解析部分[tcp_parse](./03_rawsocket_underlying_c/02_Pointer_Casting&&Decapsulation/03_parse_TCP.c),首先通过之前提到的ihl解析字段和因特网头的解析来对将指针移动到tcp头开始的部分，在确定了源端口号和目标端口号以及解析了tcp包的flag类型后，我们尝试去对tcp本身传递的内容进行解析。
+    ```c
+      int payload_offset = (sizeof(struct ethhdr)+tcp_header_len+ip_len);
+      int payload_len = data_size-payload_offset;
+    ```
+  * 因为tcp报头中并不像c语言的printf里面有像'\0'一样明显的缓冲区结束符，所以在这里我们需要确定开始进行内容解析的开头和范围，在后续解析的时候我们通过isprintf字段来解析是否能够打印，如果可以或者是换行站位符则通过putchar进行打印//todo解释一下为什么这里要用这个方法进行输出，否则则使用.来做无法打印的二进制数据的占位符

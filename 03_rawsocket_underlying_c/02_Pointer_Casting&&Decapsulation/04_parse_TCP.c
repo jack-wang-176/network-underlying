@@ -31,7 +31,7 @@ int main(int argc, char*argv[]){
     memset(&sll,0,sizeof(sll));
     sll.sll_family = AF_PACKET;
     sll.sll_protocol = htons(ETH_P_ALL);
-    sll.sll_ifindex = ifr.ifr_name;
+    sll.sll_ifindex = ifr.ifr_ifindex;
     if((bind(raw_socket,(struct sockaddr*)&sll,sizeof(sll)))<0){
         perror("fail to bind");
         exit(1);
@@ -52,11 +52,11 @@ int main(int argc, char*argv[]){
             perror("fail to recvfrom");
             continue;
         }
-        struct ethhdr *eth = (struct ethhdr*)&buf;
+        struct ethhdr *eth = (struct ethhdr*)buf;
         printf("\n=== Captured Packet (Total Size: %d bytes) ===\n", data_size);
         printf("Dest Mac : %02x %02x %02x %02x %02x %02x\n",eth->h_dest[0],eth->h_dest[1],eth->h_dest[2],eth->h_dest[3],eth->h_dest[4],eth->h_dest[5]);
         printf("Source MAC : %02x:%02x:%02x:%02x:%02x:%02x\n",eth->h_source[0], eth->h_source[1], eth->h_source[2],eth->h_source[3], eth->h_source[4], eth->h_source[5]);
-        switch(eth->h_proto){
+        switch(ntohs(eth->h_proto)){
             case ETH_P_IP:
               printf("IP Protocol\n");
               break;
@@ -64,29 +64,30 @@ int main(int argc, char*argv[]){
               printf("IPV6 Protocol\n");
               continue;
             case ETH_P_ARP:
-              prinf("ARP Protocl\n");
+              printf("ARP Protocl\n");
               continue;
             default:
               printf("Other Protocl\n");
               continue;    
         }
-        struct iphdr *iph = (struct iph*)(buf +  sizeof(buf));
+        struct iphdr *iph = (struct iphdr*)(buf +  sizeof(struct ethhdr));
         int ip_len = iph->ihl*4;
         printf("IP Header Length :%d bytes\n",ip_len);
         printf("TTL : %d\n",iph->ttl);
         printf("Transport Protocol:");
         switch(iph->protocol){
-            case 6:
+            case IPPROTO_TCP: // 
              printf("TCP\n");
              break;
-            case 1:
+            case IPPROTO_ICMP: // 1
              printf("ICMP\n");
-             break;
-            case 17:
+             continue;
+            case IPPROTO_UDP: // 17
              printf("UDP\n");
-             break;
+             continue;
             default: 
              printf("Unknown (%d)\n", iph->protocol);
+             continue;
         }
         struct sockaddr_in source,dest;
         source.sin_addr.s_addr = iph->saddr;
@@ -111,7 +112,7 @@ int main(int argc, char*argv[]){
         printf("\n[+] Entering L5 Application Layer: Payload\n");
         printf("    Payload Offset   : %d bytes from buffer start\n", payload_offset);
         
-        if(payload_len = 0){
+        if(payload_len == 0){
             printf("    [Payload is empty - Control Packet]\n");
         }else{
             printf("    Payload Length   : %d bytes\n", payload_len);
