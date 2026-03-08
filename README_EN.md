@@ -44,11 +44,11 @@ This project is divided into the following modules based on the learning path:
 ### 01 Basic (Fundamentals)
 The cornerstone of network communication, primarily addressing data representation differences across layers.
 
-* **[01_endian](./01_webcoding_based_on_c/01_basic/01_endian.c)**
+* **[01_endian](./01_socket_underlying_c/01_basic/01_endian.c)**
     * Demonstrates the difference between **Little-Endian** and **Big-Endian**.
     * **Why the difference?** This is a historical legacy of CPU architectures (e.g., Intel x86 chose Little-Endian, while early Motorola chose Big-Endian). To prevent chaos, network protocols mandate **Big-Endian** as the standard "Network Byte Order." Therefore, we must convert host Little-Endian data before sending packets.
   
-* **[02_htol_htons](./01_webcoding_based_on_c/01_basic/02_htol_htons.c)**
+* **[02_htol_htons](./01_socket_underlying_c/01_basic/02_htol_htons.c)**
     * Based on `<arpa/inet.h>`.
       ```c
       extern uint16_t htons (uint16_t __hostshort)
@@ -57,7 +57,7 @@ The cornerstone of network communication, primarily addressing data representati
     * Implements conversion from **Host Byte Order** to **Network Byte Order** (e.g., `htonl`, `htons`).
     * **Note on `__THROW` and `__attribute__`**: These are hints for the compiler. `__THROW` tells the compiler the function won't throw exceptions, and `__const__` indicates it's a "pure function" (depends only on input, no side effects), allowing the compiler to optimize safely.
 
-* **[03_inet_pton](./01_webcoding_based_on_c/01_basic/03_inet_pton.c)**
+* **[03_inet_pton](./01_socket_underlying_c/01_basic/03_inet_pton.c)**
     * *Presentation to Numeric*.
     * Converts dotted-decimal strings (e.g., "192.168.1.1") into 32-bit unsigned integers for network transmission.
       ```c
@@ -66,7 +66,7 @@ The cornerstone of network communication, primarily addressing data representati
       ```
     * **Why `void *`?** This is a clever design. IPv4 uses `struct in_addr` (4 bytes), while IPv6 uses `struct in6_addr` (16 bytes). Using `void*` acts as a universal adapter to accept binary data for either protocol.
 
-* **[04_inet_ntop](./01_webcoding_based_on_c/01_basic/04_inet_ntop.c)**
+* **[04_inet_ntop](./01_socket_underlying_c/01_basic/04_inet_ntop.c)**
     * *Numeric to Presentation*.
     * Restores 32-bit network integers back to human-readable IP strings.
     * `__len` is included to prevent buffer overflows—a classic memory safety issue in C.
@@ -75,7 +75,7 @@ The cornerstone of network communication, primarily addressing data representati
 
 Connectionless, unreliable data transmission protocol.
 
-* **[01_socket](./01_webcoding_based_on_c/02_udp/01_socket.c)**
+* **[01_socket](./01_socket_underlying_c/02_udp/01_socket.c)**
 * Shows the function for creating a socket.
 ```c
 int socket (int __domain, int __type, int __protocol)
@@ -88,7 +88,7 @@ int socket (int __domain, int __type, int __protocol)
 * As a file descriptor, it must be closed at the end of the program. `close` means disconnecting during communication; in TCP, this becomes more complex.
 
 
-* **[02_sendto](./01_webcoding_based_on_c/02_udp/02_sendto.c)**
+* **[02_sendto](./01_socket_underlying_c/02_udp/02_sendto.c)**
 * Shows data transmission for the UDP transport type.
 ```c
 ssize_t sendto (int __fd, const void *__buf, size_t __n,int __flags, __CONST_SOCKADDR_ARG __addr,socklen_t __addr_len);
@@ -127,7 +127,7 @@ char sa_data[14];   /* Address data.  */
 * As can be seen, this is actually a data compression process. Such a design reveals a core issue in programming: the contradiction between natural language programming and machine binary composition.
 
 
-* **[03_bind](./01_webcoding_based_on_c/02_udp/03_bind.c)**
+* **[03_bind](./01_socket_underlying_c/02_udp/03_bind.c)**
 * The `bind` function is mainly used to fix the IP and port number. Based on the orientation of this function, it is easy to understand that the information receiver needs this requirement more.
 ```c
 int bind (int __fd, __CONST_SOCKADDR_ARG __addr, socklen_t __len)
@@ -139,7 +139,7 @@ int bind (int __fd, __CONST_SOCKADDR_ARG __addr, socklen_t __len)
 * In TCP/UDP programming, we generally simply refer to the side that needs binding as the server, but this is actually determined by the relative relationship between information receiving and sending. We can see further embodiment of this in multicast and group casting.
 
 
-* **[04_recvfrom](./01_webcoding_based_on_c/02_udp/04_recvfrom.c)**
+* **[04_recvfrom](./01_socket_underlying_c/02_udp/04_recvfrom.c)**
 * `recvfrom` is the UDP receiving function.
 ```c
 recvfrom (int __fd, void *__restrict __buf, size_t __n, int __flags,
@@ -151,7 +151,7 @@ recvfrom (int __fd, void *__restrict __buf, size_t __n, int __flags,
 * It is important to note here that `recvfrom` receives data from other hosts, so we need to pre-create an empty structure for it to fill in. Also, `addrlen` is changed to output the length of the received information. This design allows UDP to implement multi-threading very simply. The cost is that every client needs a corresponding structure. We will see later that because of the three-way handshake required by TCP, TCP's design takes a completely different path.
 
 
-* **[05_server](./01_webcoding_based_on_c/02_udp/05_server.c)&&[06_client](./01_webcoding_based_on_c/02_udp/06_client.c)** * This section contains the specific running code for the UDP client and server. Essentially, it invokes the functions mentioned above to concretely implement the communication process.
+* **[05_server](./01_socket_underlying_c/02_udp/05_server.c)&&[06_client](./01_socket_underlying_c/02_udp/06_client.c)** * This section contains the specific running code for the UDP client and server. Essentially, it invokes the functions mentioned above to concretely implement the communication process.
 ```c
   if(argc<3){
 fprintf(stderr,"Usage : %s<IP> <PORT>\n",argv[0]);
@@ -210,7 +210,7 @@ extern char *fgets (char *__restrict __s, int __n, FILE *__restrict __stream)
 * Before we begin, I want to briefly introduce the core of understanding TFTP. As a small file transfer protocol based on UDP, the most annoying yet critical part of implementing TFTP in C is **manually constructing and analyzing binary packets**. You need to piece together every single byte.
 
 
-* **[01_tftp_client](./01_webcoding_based_on_c/03_tftp/01_tftp_client.c)**
+* **[01_tftp_client](./01_socket_underlying_c/03_tftp/01_tftp_client.c)**
 * **Part 1: Packet Construction Area**
 * Specify the download filename `scanf("%s",filename);`
 * The first difficulty is constructing the data packet; this isn't a string, it's compact binary.
@@ -278,7 +278,7 @@ packet_buf[1]= 4;
 * **Summary**: The main challenge for such a client is the processing of binary packets. Since UDP itself is unreliable, we need to manually verify packet headers. As we can see, this verification logic is actually very similar to TCP's three-way handshake, which is why TCP usually handles file transfer tasks.
 
 
-* **[02_tftp_server](./01_webcoding_based_on_c/03_tftp/02_tftp_server.c)**
+* **[02_tftp_server](./01_socket_underlying_c/03_tftp/02_tftp_server.c)**
 * The server-side logic is relatively passive, mainly focusing on parsing and feedback:
 1. Verify the data packet and check if the relevant file exists.
 2. Define a block number and write it into the header, using the buffer as a relay for file data.
@@ -333,11 +333,11 @@ setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
 
 
-* **[01_broadcast_send](./01_webcoding_based_on_c/04_broadcast&&groupcast/01_broadcast_send.c)** * This file demonstrates the broadcast sender. Unlike TCP/UDP programming, in broadcast and multicast, there is no traditional Client-Server framework, but rather a relative relationship between information sending and receiving.
+* **[01_broadcast_send](./01_socket_underlying_c/04_broadcast&&groupcast/01_broadcast_send.c)** * This file demonstrates the broadcast sender. Unlike TCP/UDP programming, in broadcast and multicast, there is no traditional Client-Server framework, but rather a relative relationship between information sending and receiving.
 * Here `sendto` is used. Aside from needing to add extra functionality to the socket, the logic is basically consistent with the UDP client.
 
 
-* **[02_broadcast_recv](./01_webcoding_based_on_c/04_broadcast&&groupcast/02_broadcast_recv.c)**
+* **[02_broadcast_recv](./01_socket_underlying_c/04_broadcast&&groupcast/02_broadcast_recv.c)**
 * The structure of this file is even simpler than `udp_server`, because here the broadcast address is fixed, and we only need to listen for corresponding data packets.
 * What's interesting here is that `recv` doesn't need specific permissions set. This aligns with the design philosophy of broadcast: the sender needs extra verification, while the receiver only needs to judge if the packet is meant for it.
 
@@ -354,7 +354,7 @@ setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 * **Class E**: Reserved for research.
 
 
-* **[03_groupcast_send.c](./01_webcoding_based_on_c/04_broadcast&&groupcast/03_groupcast_send.c)**
+* **[03_groupcast_send.c](./01_socket_underlying_c/04_broadcast&&groupcast/03_groupcast_send.c)**
 * Here, the multicast sender doesn't even need to use `setsockopt`. This is because Class D IP segments are inherently dedicated to multicast. So, `send` only needs to transmit data to these IP segments; when it sends, it has effectively already set the corresponding multicast group on that IP.
 
 
@@ -362,7 +362,7 @@ setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 * **What is INADDR_ANY**: We often see `server_addr.sin_addr.s_addr = htonl(INADDR_ANY);` in code. Its value is actually `0.0.0.0`. It means "bind to all available local network interfaces". If you have both Wi-Fi and an Ethernet cable, using `INADDR_ANY` allows you to receive data from both network cards, without binding the program to a specific IP.
 
 
-* **[04_groupcast_recv.c](./01_webcoding_based_on_c/04_broadcast&&groupcast/04_groupcast_recv.c)**
+* **[04_groupcast_recv.c](./01_socket_underlying_c/04_broadcast&&groupcast/04_groupcast_recv.c)**
 * `recv` needs to use `setsockopt` for configuration. As mentioned before, `_optval` in `setsockopt` is a `void*` type, which means we can construct a structure to pass data parameters; this is a common method in C. Here we need to use the `ip_mreq` structure, specifically designed for multicast groups, to set parameters:
 ```c
 struct ip_mreq
@@ -396,7 +396,7 @@ struct ip_mreq
 
 
 
-* **[01_client](./01_webcoding_based_on_c/05_tcp/01_client.c)**
+* **[01_client](./01_socket_underlying_c/05_tcp/01_client.c)**
 * This section shows the TCP client. After creating the socket and encapsulating the server structure, we first need to call the encapsulated function to establish the underlying connection.
 ```c
 extern int connect (int __fd, __CONST_SOCKADDR_ARG __addr, socklen_t __len);
@@ -424,7 +424,7 @@ extern ssize_t send (int __fd, const void *__buf, size_t __n, int __flags);
 * **Reason**: `sizeof` calculates the total memory allocated for the array (e.g., 1024), while `strlen` calculates the actual character length (e.g., "hello" is 5). If you use `sizeof`, you will send the hundreds of bytes of useless garbage data (乱码) following the string in the buffer to the other party, which is disastrous when processing protocols.
 
 
-* **[02_server](./01_webcoding_based_on_c/05_tcp/02_server.c)**
+* **[02_server](./01_socket_underlying_c/05_tcp/02_server.c)**
 * Here is a TCP server instance. After creating the socket and filling/binding the structure, the socket must first be set to the listening state.
 ```c
 extern int listen (int __fd, int __n) __THROW;
@@ -487,7 +487,7 @@ extern ssize_t recv (int __fd, void *__buf, size_t __n, int __flags);
 ```
 
 
-* **[03_server_fork](./01_webcoding_based_on_c/05_tcp/03_server_fork.c)**
+* **[03_server_fork](./01_socket_underlying_c/05_tcp/03_server_fork.c)**
 * Here, concurrency is implemented using multi-processing.
 ```c
 extern __pid_t fork (void) __THROWNL;
@@ -521,7 +521,7 @@ void handler(int sig){
 * `WNOHANG`: **Non-blocking Key**. If no child process has finished currently, return 0 immediately; don't sit there blocking. This ensures the Server doesn't stop responding to new requests just to clean up garbage.
 
 
-* **[04_server_thread](./01_webcoding_based_on_c/05_tcp/04_server_thread.c)**
+* **[04_server_thread](./01_socket_underlying_c/05_tcp/04_server_thread.c)**
 * Using multi-threading for processing. A process is the unit of resource allocation (Heavy); a thread is the unit of CPU scheduling (Light).
 ```c
 extern int pthread_create (pthread_t *__restrict __newthread,
@@ -555,7 +555,7 @@ pthread_detach(pthread_self());
 * **Principle**: By default, threads are `joinable`, meaning the main thread must call `pthread_join` to "collect the body" after exit. Calling `detach` tells the kernel: "This thread is also just a regular worker; just bury it when it dies." The kernel will automatically release its stack space and resources upon exit, without the main thread worrying about it.
 
 
-* **[05_server_noblock](./01_webcoding_based_on_c/05_tcp/05_server_noblock.c)**
+* **[05_server_noblock](./01_socket_underlying_c/05_tcp/05_server_noblock.c)**
 * In this file, we attempt to set the socket to non-blocking (Non-blocking). This is the first step towards high-performance IO (Epoll/IOCP).
 ```c
 // Get current flag
@@ -577,7 +577,7 @@ fcntl(sockfd, F_SETFL, flag | O_NONBLOCK, 0);
 * At this time, you must check `errno`. If `errno == EAGAIN` (Try again) or `EWOULDBLOCK`, it means **"No data right now, not an error, come back later"**. This allows the program to do other things when there is no data.
 
 
-* **[06_server_epoll](./01_webcoding_based_on_c/05_tcp/06_server_epoll.c)**
+* **[06_server_epoll](./01_socket_underlying_c/05_tcp/06_server_epoll.c)**
 * **Epoll**: The most efficient IO multiplexer on Linux. It solves the inefficiency of `select/poll` polling all sockets.
 ```c
 extern int epoll_create1 (int __flags) __THROW;
@@ -1045,7 +1045,7 @@ Now that we understand the construction process of the `Listener`, the `Accept` 
   ```
 
 
-* The non-blocking I/O approach here is completely consistent with the logic we implemented in the C language [netpoll](./01_webcoding_based_on_c/05_tcp/06_server_epoll.c) section: when `accept` returns `EAGAIN`, do not put the thread to sleep; instead, yield the CPU.
+* The non-blocking I/O approach here is completely consistent with the logic we implemented in the C language [netpoll](./01_socket_underlying_c/05_tcp/06_server_epoll.c) section: when `accept` returns `EAGAIN`, do not put the thread to sleep; instead, yield the CPU.
 * **Key Point**: The brilliance of Go lies in the fact that when encountering `EAGAIN`, it calls `fd.pd.waitRead` to suspend the current **Goroutine**, rather than blocking the operating system thread.
 
 #### 2. The Core of Encapsulation: newFD
@@ -1060,7 +1060,7 @@ Now that we understand the construction process of the `Listener`, the `Accept` 
 
 
 * **ZeroReadIsEOF**: This is a critical rule for determining termination.
-* As we mentioned in the [udp](./01_webcoding_based_on_c/02_udp/04_recvfrom.c) section, UDP allows sending 0-byte packets, which does not signify connection closure in UDP.
+* As we mentioned in the [udp](./01_socket_underlying_c/02_udp/04_recvfrom.c) section, UDP allows sending 0-byte packets, which does not signify connection closure in UDP.
 * However, in TCP, a `read` returning 0 bytes usually means the peer has sent a FIN packet (EOF), and the connection needs to be closed.
 * `newFD` automatically sets this field based on the value of `IsStream`, ensuring the upper-level business logic can correctly handle the meaning of "reading 0 bytes."
 
@@ -1312,7 +1312,7 @@ In this section, we conducted a step-by-step, top-down deep dive into the princi
 
 #### Go's Networking System
 
-* Our summary discussion here is built upon the understanding of the [epoll](./01_webcoding_based_on_c/05_tcp/06_server_epoll.c) principles previously implemented in C.
+* Our summary discussion here is built upon the understanding of the [epoll](./01_socket_underlying_c/05_tcp/06_server_epoll.c) principles previously implemented in C.
 * From a macro perspective, Go's networking system can be clearly divided into the underlying `runtime` layer and the encapsulation `internal` layer. The former is deeply bound to Go’s Garbage Collector (GC) and scheduler, directly handling assembly-level system calls and multi-goroutine concurrency states. The latter provides general I/O interface encapsulations for upper layers (such as the `net` package).
 * During the service startup phase, the `listen` function first creates and explicitly configures the corresponding network connection interface (**Listener**), which encapsulates specific method implementations for different protocols. This creation process implicitly initializes the `netpoll` (network poller) object and the underlying socket file descriptor, eventually registering (writing) the socket into the global `netpoll` monitoring red-black tree. Simultaneously, it executes core system calls like `bind` at the `runtime` layer.
 * Logically, the `accept` function can be viewed entirely as a unique `read` operation triggered by the arrival of a new connection. Here, we see the intersection of all the I/O functions we analyzed: [init](./02_go_sdk/go/src/internal/poll/fd_poll_runtime.go#L38). For `listen`, this `init` function is the business logic endpoint for its registration into the multiplexer. For `accept`, `read`, and `write`, this `init` is merely a prerequisite call for the upper-layer encapsulation to access the asynchronous I/O system. Go cleverly encapsulates the initialization of the underlying environment with the operation of writing the socket into the poller (using a double-checked lock), mechanically ensuring that no illegal read/write events are written before `netpoll` is fully initialized. At the source code level of the `net` package, the strict functional boundary between the upper `net.netFD` and the internal `poll.FD` is not our primary focus. We simply need to understand that the latter (`poll.FD`) is the general low-level business object that executes actual network calls and interfaces downward with the `runtime` state machine, while the former (`net.netFD`) is an abstract shell providing independent network protocol encapsulation and business-level error checking for the end-user.
