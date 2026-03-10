@@ -7,6 +7,8 @@
 #include<sys/ioctl.h>
 #include<linux/if.h>
 #include<linux/if_tun.h>
+#include<arpa/inet.h>
+#include"../include/eth.h"
 
 int tun_alloc(char *dev){
     int fd,err;
@@ -42,11 +44,38 @@ int main(int argc, char*argv[]){
     while(1){
         ssize_t nread = read(tap_fd,buffer,sizeof(buffer));
         if (nread < 0){
-            perror("fail to read");
-            continue;
+            perror("Read error");
+            break;
         } 
+        if (nread <sizeof(struct ethhdr)){
+            continue;
+        }
         printf("Read %zd bytes from %s:\n", nread, tap_name);
-        
+        struct eth_hdr *eth = (struct ethhdr*)buffer;
+        uint16_t protocol = ntohs(eth->ethtype);
+        printf("  |-源 MAC  : %02x:%02x:%02x:%02x:%02x:%02x\n",
+               eth->smac[0], eth->smac[1], eth->smac[2],
+               eth->smac[3], eth->smac[4], eth->smac[5]);
+
+        printf("  |-目的 MAC: %02x:%02x:%02x:%02x:%02x:%02x\n",
+               eth->dmac[0], eth->dmac[1], eth->dmac[2],
+               eth->dmac[3], eth->dmac[4], eth->dmac[5]);
+        printf("  |-协议类型: %04x",protocol);
+        switch(protocol){
+            case 0x0800:
+              printf("  (IP Protocol)\n");
+              break;
+            case 0x0806:
+              printf("  (ARP Protocol)\n");
+              break;
+            case 0x86dd:
+              printf("  (IPv6 Protocol)\n");
+              break;
+            default:
+              printf("  (Other Protocol)\n");
+        }
+        printf("----------------------------------------\n");
+
         for (int i = 0; i < nread; i++) {
             printf("%02x ", buffer[i]);
             if ((i + 1) % 16 == 0)
