@@ -9,6 +9,7 @@
 #include<linux/if_tun.h>
 #include<arpa/inet.h>
 #include"../include/eth.h"
+#include"../include/arp.h"
 
 int tun_alloc(char *dev){
     int fd,err;
@@ -67,6 +68,15 @@ int main(int argc, char*argv[]){
               break;
             case 0x0806:
               printf("  (ARP Protocol)\n");
+              struct arp_hdr *arph = (struct arp_hdr*)(buffer + sizeof(struct arp_hdr));
+              uint16_t opcode = ntohs(arph -> opcode);
+              printf("  |---[ARP 详细信息]---\n");
+              printf("      |-操作码: %d (%s)\n", opcode, opcode == ARP_REQUEST ? "请求mac地址" : "应答mac地址");
+              struct in_addr sendaddr,recvaddr;
+              sendaddr.s_addr = arph -> sip;
+              recvaddr.s_addr = arph -> dip;
+              printf("      |-发送方 IP : %s\n", inet_ntoa(sendaddr));
+              printf("      |-寻找目标 IP: %s\n", inet_ntoa(recvaddr));
               break;
             case 0x86dd:
               printf("  (IPv6 Protocol)\n");

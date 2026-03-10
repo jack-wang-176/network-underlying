@@ -1,7 +1,7 @@
 #!/bin/bash
 
 TAP_DEV="tap0"
-TAP_IP="10.0.0.1"
+TAP_IP="10.42.42.2"
 
 if [ "$1" == "down" ];then
   sudo ip link delete $TAP_DEV
