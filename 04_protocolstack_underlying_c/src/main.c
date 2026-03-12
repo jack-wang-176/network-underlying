@@ -11,6 +11,8 @@
 #include"../include/eth.h"
 #include"../include/arp.h"
 
+
+void handle_arp(int fd,struct eth_hdr *ethd,struct arp_hdr *arpd,unsigned char* mac);
 int tun_alloc(char *dev){
     int fd,err;
     struct ifreq ifr;
@@ -31,8 +33,26 @@ int tun_alloc(char *dev){
     strcpy(dev,ifr.ifr_name);
     return fd;
 }
+unsigned char* tun_mac(char *dev,unsigned char* mac){
+    int fd;
+    struct ifreq ifr;
+    memset(&ifr,0,sizeof(ifr));
+    strncpy(ifr.ifr_name, dev, IFNAMSIZ);
+    if((fd = socket(AF_INET,SOCK_DGRAM,0))<0){
+        perror("fail to create temporary socket");
+        exit(1);
+    }
+    if((ioctl(fd,SIOCGIFHWADDR,&ifr))<0){
+        perror("fail to get interface addr");
+        exit(1);
+    }
+    memcpy(mac, ifr.ifr_hwaddr.sa_data, 6);
+    close(fd);
+    return mac;
+}
 int main(int argc, char*argv[]){
     char tap_name[IFNAMSIZ] = "tap0";
+    unsigned char mymac[6];
     int tap_fd = tun_alloc(tap_name);
     if(tap_fd<0){
         fprintf(stderr, "Error connecting to tap interface %s!\n", tap_name);
@@ -41,6 +61,7 @@ int main(int argc, char*argv[]){
     printf("Successfully attached to %s\n", tap_name);
     printf("Listening for packets...\n\n");
 
+    unsigned char* mac = tun_mac(tap_name,mymac);
     unsigned char buffer[1522];
     while(1){
         ssize_t nread = read(tap_fd,buffer,sizeof(buffer));
@@ -52,7 +73,7 @@ int main(int argc, char*argv[]){
             continue;
         }
         printf("Read %zd bytes from %s:\n", nread, tap_name);
-        struct eth_hdr *eth = (struct ethhdr*)buffer;
+        struct eth_hdr *eth = (struct eth_hdr*)buffer;
         uint16_t protocol = ntohs(eth->ethtype);
         printf("  |-源 MAC  : %02x:%02x:%02x:%02x:%02x:%02x\n",
                eth->smac[0], eth->smac[1], eth->smac[2],
@@ -68,7 +89,7 @@ int main(int argc, char*argv[]){
               break;
             case 0x0806:
               printf("  (ARP Protocol)\n");
-              struct arp_hdr *arph = (struct arp_hdr*)(buffer + sizeof(struct arp_hdr));
+              struct arp_hdr *arph = (struct arp_hdr*)(buffer + sizeof(struct eth_hdr));
               uint16_t opcode = ntohs(arph -> opcode);
               printf("  |---[ARP 详细信息]---\n");
               printf("      |-操作码: %d (%s)\n", opcode, opcode == ARP_REQUEST ? "请求mac地址" : "应答mac地址");
@@ -77,6 +98,7 @@ int main(int argc, char*argv[]){
               recvaddr.s_addr = arph -> dip;
               printf("      |-发送方 IP : %s\n", inet_ntoa(sendaddr));
               printf("      |-寻找目标 IP: %s\n", inet_ntoa(recvaddr));
+              handle_arp(tap_fd,eth,arph,mac);
               break;
             case 0x86dd:
               printf("  (IPv6 Protocol)\n");

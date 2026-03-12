@@ -5,7 +5,7 @@ TAP_IP="10.42.42.2"
 
 if [ "$1" == "down" ];then
   sudo ip link delete $TAP_DEV
-  echo "TAP device TAP_DEV removed."
+  echo "TAP device $TAP_DEV removed."
 else
   sudo ip tuntap add mode tap dev $TAP_DEV
   sudo ip link set dev $TAP_DEV up
