@@ -10,7 +10,7 @@ void handle_arp(int fd,struct eth_hdr *ethd,struct arp_hdr *arpd,unsigned char* 
     if (ntohs(arpd->opcode) != ARP_REQUEST) {
         return;
     }
-    printf("  |---[构造 ARP Reply]---\n");
+    printf("          |---[构造 ARP Reply]---\n");
     unsigned char reply[42];
     struct eth_hdr *res_eth = (struct eth_hdr*)reply;
     struct arp_hdr *res_arp = (struct arp_hdr*)(reply + sizeof(struct eth_hdr));
@@ -30,6 +30,6 @@ void handle_arp(int fd,struct eth_hdr *ethd,struct arp_hdr *arpd,unsigned char* 
     if((write(fd,reply,sizeof(reply)))<0){
         perror("arp reply write error");
     }else{
-        printf("      >> 已发送 ARP Reply\n");
+        printf("          >> 已发送 ARP Reply\n");
     }
 }
