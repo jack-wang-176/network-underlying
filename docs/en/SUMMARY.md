@@ -1,8 +1,6 @@
 #  Table of Contents
 
-Welcome to the reading guide for `network-underlying`. Please select the chapter you wish to read based on the progressive modules below.
-
----
+## **English Version** | [中文版本](../zh/SUMMARY.md)
 
 ## Part 1: Socket-Underlying-C
 Explore traditional C language system calls and OS-level network communication principles.

@@ -2,32 +2,19 @@
 
 # network-underlying
 
-[English Version](./README_EN.md) | **中文版本**
-
-<br>
-
-
-
-![Language](https://img.shields.io/badge/language-C-blue.svg)
-![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20WSL-green.svg)
-![Editor](https://img.shields.io/badge/Editor-VS%20Code-orange.svg)
-![Language](https://img.shields.io/badge/Language-Go-00ADD8?style=flat&logo=go&logoColor=white)
-
-<br>
+**English Version** | [中文版本](./README.md)
 
 </div>
 
-你好
- **Part 1**：基于 C 语言构建基础网络模型，演示服务端并发模型从 fork 到 epoll 的演进。
+Hello! This is my study notebook on computer networks. In this notebook, I try to organize the entire content according to the five-layer network model to help readers and myself build a fundamental struct.
 
- **Part 2**：深入 Go 语言 Runtime 源码，全面解构 netpoll 网络多路复用体系与 Goroutine 调度。
+👉 **[Click here to enter the Table of Contents & Reading Guide](./docs/en/SUMMARY.md)**
 
- **Part 3**：通过 C 语言 Raw Socket 越过传输层，手动构造、发送并解析底层的 IP、TCP 与 UDP 数据包。
+**Part 1**: Builds a basic network model using C, demonstrating the evolution of server concurrency models from `fork` to `epoll`. It focuses on the application of sockets at the network layer.
 
+**Part 2**: Takes a deep dive into the Go Runtime source code to comprehensively deconstruct the `netpoll` network multiplexing architecture and Goroutine scheduling. It showcases the development and encapsulation of application-layer tools, as well as the networking foundation of the modern web.
 
-👉 **[点击这里进入核心目录与阅读指南 (Table of Contents)](./docs/zh/SUMMARY.md)**
-
-
+**Part 3**: Bypasses the transport layer using C Raw Sockets to manually construct, send, and parse underlying IP, TCP, and UDP packets. This part handles receiving packets and progressively explains the encapsulation of packet headers and protocol implementations from the data link layer to the network layer.
 
 ---
-*注：本项目仍在持续更新中 (Work in Progress)，欢迎 Watch 与 Star 以获取最新动态。*
+*Note: This project is still being actively updated (Work in Progress). Feel free to Watch and Star to stay tuned for the latest updates.*
