@@ -2,7 +2,7 @@
 
 # network-underlying
 
-**English Version** | [中文版本](./README.md)
+**English Version** | [中文版本](./README_CH.md)
 
 </div>
 
