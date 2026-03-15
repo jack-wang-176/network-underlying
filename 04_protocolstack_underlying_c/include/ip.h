@@ -19,9 +19,4 @@
     uint32_t dip;
  }__attribute__((packed));
 
-
-
-
-
-
 #endif

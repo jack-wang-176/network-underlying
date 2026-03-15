@@ -16,3 +16,5 @@ sudo ./my_stack
 echo "已经退出程序，正在清理网卡"
 sudo bash tools/setup_tap.sh down
 echo "网卡清理完毕"
+echo "开始删除程序"
+sudo rm ./my_stack && echo "程序删除成功"
