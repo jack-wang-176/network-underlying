@@ -22,4 +22,12 @@ struct tcp_hdr {
     uint16_t uindex;
 }__attribute__((packed));
 
+struct pre_header{
+    uint32_t sip;
+    uint32_t dip;
+    uint8_t  zero;
+    uint8_t  protocol;
+    uint16_t length;
+}__attribute__((packed));
+
 #endif 

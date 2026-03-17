@@ -8,7 +8,7 @@
 
 Hello! This is my study notebook on computer networks. In this notebook, I try to organize the entire content according to the five-layer network model to help readers and myself build a fundamental struct.
 
-👉 **[Click here to enter the Table of Contents & Reading Guide](./docs/en/SUMMARY.md)**
+ **[Click here to enter the Table of Contents & Reading Guide](./docs/en/SUMMARY.md)**
 
 **Part 1**: Builds a basic network model using C, demonstrating the evolution of server concurrency models from `fork` to `epoll`. It focuses on the application of sockets at the network layer.
 
