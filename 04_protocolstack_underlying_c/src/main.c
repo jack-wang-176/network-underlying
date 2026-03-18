@@ -16,7 +16,8 @@
 
 void handle_icmp(int fd,struct eth_hdr *eth,struct ip_hdr *ip,struct icmp_hdr *icmp,int len);
 void handle_arp(int fd,struct eth_hdr *ethd,struct arp_hdr *arpd,unsigned char* mac);
-void handle_tcp(int fd,struct tcp_hdr *tcp,struct ip_hdr *ip,struct eth_hdr *eth);
+void handle_tcp(int fd,struct eth_hdr *eth,struct ip_hdr *ip,struct tcp_hdr *tcp);
+void handle_tcp_data(int fd,struct eth_hdr *eth, struct ip_hdr *ip,struct tcp_hdr *tcp);
 int tun_alloc(char *dev){
     int fd,err;
     struct ifreq ifr;
@@ -102,7 +103,7 @@ int main(int argc, char*argv[]){
                 case IP_P_TCP:
                   printf("      |-协议类型 : TCP\n");
                   struct tcp_hdr *tcp = (struct tcp_hdr*)(buffer +ip_hdr_len +sizeof(struct eth_hdr));
-                  handle_tcp(tap_fd,tcp,ip,eth);
+                  handle_tcp(tap_fd,eth,ip,tcp);
                   break;
                 case IP_P_ICMP:
                   printf("      |-协议类型 : ICMP\n");
