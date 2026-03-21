@@ -1,5 +1,7 @@
 #!/bin/bash
 
+cd "$(dirname "$0")" || exit 1
+
 echo "开始编译..."
 gcc src/*.c -o my_stack
 
