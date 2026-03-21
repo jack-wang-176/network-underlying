@@ -2,6 +2,7 @@
 #include<stdlib.h>
 #include<string.h>
 #include<arpa/inet.h>
+#include<unistd.h>
 #include"../include/icmp.h"
 #include"../include/ip.h"
 #include"../include/eth.h"

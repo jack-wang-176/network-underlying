@@ -2,10 +2,14 @@
 #include<stdio.h>
 #include<arpa/inet.h>
 #include<string.h>
+#include<stdlib.h>
+#include<unistd.h>
 #include"../include/ip.h"
 #include"../include/tcp.h"
 #include"../include/icmp.h"
 #include"../include/eth.h"
+
+void handle_tcp_data(int fd, struct eth_hdr *eth, struct ip_hdr *ip, struct tcp_hdr *tcp);
 
 uint16_t checksum(void* data,size_t len);
 uint16_t tcp_checksum(struct ip_hdr *ip,struct tcp_hdr *tcp,int tcp_len);
