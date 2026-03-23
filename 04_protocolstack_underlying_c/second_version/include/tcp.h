@@ -10,6 +10,26 @@
 #define TCP_ACK 0x10
 #define TCP_URG 0x20
 
+typedef enum{
+    TCP_CLOSED,
+    TCP_LISTEN,
+    TCP_SYN_RCVD,
+    TCP_ESTABLISHD,
+    TCP_FIN_WAIT_1,
+    TCP_FIN_WAIT_2,
+    TCP_CLOSED_WAIT,
+}tcp_state_t;
+
+struct tcb{
+    uint32_t saddr;
+    uint32_t daddr;
+    uint16_t sport;
+    uint16_t dport;
+    tcp_state_t state;
+    uint32_t send_next;
+    uint32_t recv_next;
+};
+
 struct tcp_hdr {
     uint16_t sport;
     uint16_t dport;

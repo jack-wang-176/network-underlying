@@ -63,6 +63,9 @@ void handle_tcp(int fd,struct eth_hdr *eth,struct ip_hdr *ip,struct tcp_hdr *tcp
     if(tcp->flag&TCP_ACK){
         handle_tcp_data(fd, eth, ip, tcp);
     }
+    if(tcp->flag&TCP_FIN){
+        handle_tcp_fin(fd,eth,ip,tcp);
+    }
 }
 
 uint16_t tcp_checksum(struct ip_hdr *ip,struct tcp_hdr *tcp,int tcp_len){
@@ -122,9 +125,47 @@ void handle_tcp_data(int fd,struct eth_hdr *eth, struct ip_hdr *ip,struct tcp_hd
         tcp->checksum = 0;
         tcp->checksum = tcp_checksum(ip,tcp,tcp_total_len);
 
-        if((write(fd,eth,sizeof(struct tcp_hdr)+ntohs(ip->totallen)))<0){
+        if((write(fd,eth,ntohs(ip->totallen)+sizeof(struct tcp_hdr)))<0){
             perror("fail to respond tcp data package");
         }
         printf("      >> 已将数据回显\n");
     }
+}
+void handle_tcp_fin(int fd,struct eth_hdr *eth, struct ip_hdr *ip,struct tcp_hdr *tcp){
+    printf("      >> 收到 FIN！对方请求断开连接。\n");
+    uint32_t incoming_seq = htonl(tcp->seq);
+    uint32_t incoming_ack = htonl(tcp->ack);
+
+    uint8_t temp_mac[6];
+    memcpy(temp_mac,eth->dmac,6);
+    memcpy(eth->dmac,eth->smac,6);
+    memcpy(eth->smac,temp_mac,6);
+
+    uint16_t temp_ip;
+    temp_ip = ip->dip;
+    ip->dip = ip->sip;
+    ip->sip = temp_ip;
+    ip->checksum = 0;
+    ip->checksum = checksum(ip,(ip->version_ihl&0x0f)*4);
+    
+    uint16_t temp_port = tcp->dport;
+    tcp->dport = tcp->sport;
+    tcp->sport = temp_port;
+    tcp->ack = htonl(incoming_seq+1);
+    tcp->seq = htonl(incoming_ack);
+    tcp->flag = TCP_ACK;
+    tcp->checksum = 0;
+    tcp->checksum = tcp_checksum(ip,tcp,sizeof(struct tcp_hdr));
+
+    if(write(fd,eth,sizeof(struct eth_hdr) + ntohs(ip->totallen))<0){
+        perror("fail to react fin");
+    }
+
+    tcp->checksum = 0;
+    tcp->checksum = tcp_checksum(ip,tcp,sizeof(struct tcp_hdr));
+
+   if(write(fd,eth,sizeof(struct eth_hdr) + ntohs(ip->totallen))<0){
+        perror("fail to react fin");
+    }
+    printf("      >> 已发送 FIN+ACK，进入 LAST_ACK 状态，等待对方最后的确认。\n");
 }
