@@ -26,13 +26,23 @@ typedef enum {
 
 struct tcp{
     bool usued;
+
     uint32_t saddr;
     uint32_t daddr;
     uint16_t sport;
     uint16_t dport;
+
+    bool time_active;
+    uint32_t rto_ticks;
+    uint32_t rto_counts;
+    uint8_t retry_count;
+
     tcp_state_t state;
     uint32_t send_next;
     uint32_t recv_next;
+
+    uint8_t unreact_pkg[1500];
+    uint16_t unreact_len;
 };
 
 struct tcp_hdr {

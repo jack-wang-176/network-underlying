@@ -38,26 +38,9 @@ int tun_alloc(char *dev){
     strcpy(dev,ifr.ifr_name);
     return fd;
 }
-unsigned char* tun_mac(char *dev,unsigned char* mac){
-    int fd;
-    struct ifreq ifr;
-    memset(&ifr,0,sizeof(ifr));
-    strncpy(ifr.ifr_name, dev, IFNAMSIZ);
-    if((fd = socket(AF_INET,SOCK_DGRAM,0))<0){
-        perror("fail to create temporary socket");
-        exit(1);
-    }
-    if((ioctl(fd,SIOCGIFHWADDR,&ifr))<0){
-        perror("fail to get interface addr");
-        exit(1);
-    }
-    memcpy(mac, ifr.ifr_hwaddr.sa_data, 6);
-    close(fd);
-    return mac;
-}
+
 int main(int argc, char*argv[]){
     char tap_name[IFNAMSIZ] = "tap0";
-    unsigned char mymac[6];
     int tap_fd = tun_alloc(tap_name);
     if(tap_fd<0){
         fprintf(stderr, "Error connecting to tap interface %s!\n", tap_name);
@@ -66,7 +49,8 @@ int main(int argc, char*argv[]){
     printf("Successfully attached to %s\n", tap_name);
     printf("Listening for packets...\n\n");
 
-    unsigned char* mac = tun_mac(tap_name,mymac);
+    unsigned char mymac[6] = {0x02, 0x00, 0x00, 0x11, 0x22, 0x33};
+    unsigned char* mac = mymac;
     unsigned char buffer[1522];
     while(1){
         ssize_t nread = read(tap_fd,buffer,sizeof(buffer));

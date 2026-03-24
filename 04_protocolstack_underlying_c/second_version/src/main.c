@@ -8,12 +8,15 @@
 #include<linux/if.h>
 #include<linux/if_tun.h>
 #include<arpa/inet.h>
+#include<poll.h>
+#include<time.h>
 #include"../include/eth.h"
 #include"../include/arp.h"
 #include"../include/ip.h"
 #include"../include/icmp.h"
 #include"../include/tcp.h"
 
+void tcp_timer_tick(int fd);
 void handle_icmp(int fd,struct eth_hdr *eth,struct ip_hdr *ip,struct icmp_hdr *icmp,int len);
 void handle_arp(int fd,struct eth_hdr *ethd,struct arp_hdr *arpd,unsigned char* mac);
 void handle_tcp(int fd,struct eth_hdr *eth,struct ip_hdr *ip,struct tcp_hdr *tcp);
@@ -38,26 +41,8 @@ int tun_alloc(char *dev){
     strcpy(dev,ifr.ifr_name);
     return fd;
 }
-unsigned char* tun_mac(char *dev,unsigned char* mac){
-    int fd;
-    struct ifreq ifr;
-    memset(&ifr,0,sizeof(ifr));
-    strncpy(ifr.ifr_name, dev, IFNAMSIZ);
-    if((fd = socket(AF_INET,SOCK_DGRAM,0))<0){
-        perror("fail to create temporary socket");
-        exit(1);
-    }
-    if((ioctl(fd,SIOCGIFHWADDR,&ifr))<0){
-        perror("fail to get interface addr");
-        exit(1);
-    }
-    memcpy(mac, ifr.ifr_hwaddr.sa_data, 6);
-    close(fd);
-    return mac;
-}
 int main(int argc, char*argv[]){
     char tap_name[IFNAMSIZ] = "tap0";
-    unsigned char mymac[6];
     int tap_fd = tun_alloc(tap_name);
     if(tap_fd<0){
         fprintf(stderr, "Error connecting to tap interface %s!\n", tap_name);
@@ -66,10 +51,21 @@ int main(int argc, char*argv[]){
     printf("Successfully attached to %s\n", tap_name);
     printf("Listening for packets...\n\n");
 
-    unsigned char* mac = tun_mac(tap_name,mymac);
+    unsigned char mymac[6] = {0x02, 0x00, 0x00, 0x11, 0x22, 0x33};
+    unsigned char* mac = mymac;
     unsigned char buffer[1522];
+
+    struct pollfd pfd;
+    pfd.fd = tap_fd;
+    pfd.events = POLLIN;
     while(1){
-        ssize_t nread = read(tap_fd,buffer,sizeof(buffer));
+        int ret =poll(&pfd,1,10);
+        if(ret<0){
+            printf("poll error");
+            break;
+        }
+        if(ret>0 &&(pfd.revents&POLLIN)){
+            ssize_t nread = read(tap_fd,buffer,sizeof(buffer));
         if (nread < 0){
             perror("Read error");
             break;
@@ -144,6 +140,9 @@ int main(int argc, char*argv[]){
             printf("\n"); 
         }
         printf("\n\n");
+
+        }
+        tcp_timer_tick(tap_fd); 
     }
     close(tap_fd);
     return 0;

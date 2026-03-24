@@ -8,6 +8,8 @@
 #include"../include/tcp.h"
 #include"../include/icmp.h"
 #include"../include/eth.h"
+#define MAX_RETRIES 5
+#define INITIAL_RTO_TICKS 100
 
 struct tcp cur_tcb = {
     .state = TCP_LISTEN
@@ -34,7 +36,6 @@ struct tcp*alloc_tcp(uint32_t saddr,uint32_t daddr, uint16_t sport,uint16_t dpor
       tcp_conn[i].state = TCP_SYN_RCVD;
       return &tcp_conn[i];
     }
-    
   }
   return NULL;
 }
@@ -65,6 +66,46 @@ void reply_tcp_packet(int fd,struct eth_hdr *eth,struct ip_hdr *ip,struct tcp_hd
         perror("fail to react fin");
     }
 }
+
+void tcp_timer_tick(int fd){
+  for(int i = 0;i<MAX_CONN;i++){
+    struct tcp *cur_tcp = &tcp_conn[i];
+    if(cur_tcp->time_active&&cur_tcp->usued){
+      cur_tcp->rto_counts++;
+      if(cur_tcp->rto_counts >= cur_tcp->rto_ticks){
+        if(cur_tcp->retry_count>= MAX_RETRIES){
+          printf("  |- [定时器] 重传次数达上限，强制关闭连接 (Port: %u)\n", cur_tcp->sport);
+          cur_tcp->usued = false;
+          cur_tcp->time_active = false;
+          cur_tcp->state = TCP_CLOSED;
+          continue;
+        }
+        printf("  |- [定时器] 发生超时！触发重传 (第 %d 次)\n", cur_tcp->retry_count + 1);
+        if((write(fd,cur_tcp->unreact_pkg,cur_tcp->unreact_len)<0)){
+          perror("fail to resend unreacted package");
+        }
+        cur_tcp->retry_count++;
+        cur_tcp->rto_counts = 0;
+        cur_tcp->rto_ticks *=2;
+      }
+    }
+  }
+}
+
+void start_tcp_timer(struct tcp *tcp,uint8_t *packet,int total_len){
+  memcpy(tcp->unreact_pkg,packet,total_len);
+  tcp->time_active = true;
+  tcp->unreact_len = total_len;
+  tcp->rto_counts = 0;
+  tcp->rto_ticks = INITIAL_RTO_TICKS;
+  tcp->retry_count = 0;
+}
+void close_tcp_timer(struct tcp *tcp){
+  tcp->time_active = false;
+  tcp->rto_counts = 0;
+  tcp->retry_count = 0;
+}
+
 void handle_tcp(int fd,struct eth_hdr *eth,struct ip_hdr *ip,struct tcp_hdr *tcp){
   
     uint32_t incoming_seq = ntohl(tcp->seq);
@@ -93,6 +134,8 @@ void handle_tcp(int fd,struct eth_hdr *eth,struct ip_hdr *ip,struct tcp_hdr *tcp
       reply_tcp_packet(fd,eth,ip,tcp,0);
       cur_tcb->send_next++;
       cur_tcb->state = TCP_SYN_RCVD;
+      int ip_total = sizeof(struct eth_hdr)+ntohs(ip->totallen);
+      start_tcp_timer(cur_tcb,(uint8_t*)eth,ip_total);
       printf("      >> 状态切换 -> TCP_SYN_RCVD\n");
       return;
     }
@@ -108,6 +151,7 @@ void handle_tcp(int fd,struct eth_hdr *eth,struct ip_hdr *ip,struct tcp_hdr *tcp
             printf("      >>收到第三次次握手数据包,检验数据包并切换状态SYN_SENT\n");
             if(incoming_ack == cur_tcb->send_next){
                 printf("      >> [SYN_RCVD] 收到握手 ACK，连接建立！\n");
+                close_tcp_timer(cur_tcb);
                 cur_tcb->state = TCP_ESTABLISHED;
             }
           }
@@ -122,7 +166,11 @@ void handle_tcp(int fd,struct eth_hdr *eth,struct ip_hdr *ip,struct tcp_hdr *tcp
             tcp->ack = htonl(cur_tcb->recv_next);
             reply_tcp_packet(fd,eth,ip,tcp,payload_len);
             cur_tcb->send_next += payload_len;
+            start_tcp_timer(cur_tcb,(uint8_t*)eth,sizeof(struct eth_hdr)+ntohs(ip->totallen));
             printf("      >> 数据已回显，更新 TCB 序列号\n");
+          }
+          if(tcp->flag&TCP_ACK&&payload_len == 0&&incoming_ack== cur_tcb->send_next){
+            close_tcp_timer(cur_tcb);
           }
           if(tcp->flag&TCP_FIN){
             printf("      >> [ESTABLISHED] 收到 FIN，开始挥手\n");
@@ -134,7 +182,8 @@ void handle_tcp(int fd,struct eth_hdr *eth,struct ip_hdr *ip,struct tcp_hdr *tcp
             tcp->offset_res = (5<<4);
             reply_tcp_packet(fd,eth,ip,tcp,0);
             cur_tcb->send_next++;
-            cur_tcb->state = TCP_LAST_ACK;      // 状态转移
+            cur_tcb->state = TCP_LAST_ACK;  
+            start_tcp_timer(cur_tcb,(uint8_t*)eth,sizeof(struct eth_hdr)+ntohs(ip->totallen)); 
             printf("      >> 已连发 ACK 和 FIN+ACK，状态切换 -> TCP_LAST_ACK\n");
           }
           break;
@@ -145,6 +194,7 @@ void handle_tcp(int fd,struct eth_hdr *eth,struct ip_hdr *ip,struct tcp_hdr *tcp
             printf("      >> 状态切换 -> TCP_LISTEN (等待新连接)\n");
           }
           cur_tcb->usued = false;
+          close_tcp_timer(cur_tcb);
           break;
         default:
           printf("      >> 未知或未处理的状态: %d\n", cur_tcb->state);
