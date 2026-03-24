@@ -3,12 +3,14 @@
 
 
 #include<stdint.h>
+#include<stdbool.h>
 #define TCP_FIN 0x01
 #define TCP_SYN 0x02
 #define TCP_RST 0x04
 #define TCP_PSH 0x08
 #define TCP_ACK 0x10
 #define TCP_URG 0x20
+#define MAX_CONN 20
 
 typedef enum {
     TCP_CLOSED,
@@ -23,6 +25,7 @@ typedef enum {
 } tcp_state_t;
 
 struct tcp{
+    bool usued;
     uint32_t saddr;
     uint32_t daddr;
     uint16_t sport;
@@ -51,5 +54,7 @@ struct pre_header{
     uint8_t  protocol;
     uint16_t length;
 }__attribute__((packed));
+
+extern struct tcp tcp_conn[MAX_CONN];
 
 #endif 
