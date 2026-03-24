@@ -9,64 +9,121 @@
 #include"../include/icmp.h"
 #include"../include/eth.h"
 
+struct tcp g_tcb = {
+    .state = TCP_LISTEN
+};
+
 void handle_tcp_data(int fd, struct eth_hdr *eth, struct ip_hdr *ip, struct tcp_hdr *tcp);
 
 
 uint16_t checksum(void* data,size_t len);
 uint16_t tcp_checksum(struct ip_hdr *ip,struct tcp_hdr *tcp,int tcp_len);
-void handle_tcp(int fd,struct eth_hdr *eth,struct ip_hdr *ip,struct tcp_hdr *tcp){
-    uint16_t src_port = ntohs(tcp ->sport);
-    uint16_t des_port = ntohs(tcp ->dport);
-    uint32_t seq = ntohl(tcp->seq);
-    uint32_t ack = ntohl(tcp->ack);
-    printf("  |---[TCP 报文解析]---\n");
-    printf("      |-端口映射: %u -> %u\n", src_port, des_port);
-    printf("      |-序列号(Seq): %u\n", seq);
-    printf("      |-确认号(Ack): %u\n", ack);
+uint8_t* get_tcp_payloadlen(struct tcp_hdr *tcp, int total_ip_len, int ip_hdr_len, int *payload_len);
+void reply_tcp_packet(int fd,struct eth_hdr *eth,struct ip_hdr *ip,struct tcp_hdr *tcp,int payload_len){
+    uint8_t temp_mac[6];
+    memcpy(temp_mac,eth->dmac,6);
+    memcpy(eth->dmac,eth->smac,6);
+    memcpy(eth->smac,temp_mac,6);
 
+    uint32_t temp_ip;
+    temp_ip = ip->dip;
+    ip->dip = ip->sip;
+    ip->sip = temp_ip;
+    ip->checksum = 0;
+    ip->checksum = checksum(ip,(ip->version_ihl&0x0f)*4);
     
-    printf("      |-标志位: ");
-    if (tcp->flag & TCP_SYN) printf("SYN ");
-    if (tcp->flag & TCP_ACK) printf("ACK ");
-    if (tcp->flag & TCP_FIN) printf("FIN ");
-    if (tcp->flag & TCP_RST) printf("RST ");
-    if (tcp->flag & TCP_PSH) printf("PSH ");
-    printf("\n");
-    fflush(stdout);
+    uint16_t temp_port = tcp->dport;
+    tcp->dport = tcp->sport;
+    tcp->sport = temp_port;
+    tcp->checksum = 0;
+    tcp->checksum = tcp_checksum(ip,tcp,(tcp->offset_res>>4)*4+payload_len);
 
-    if ((tcp->flag & TCP_SYN) && !(tcp->flag & TCP_ACK)) {
-        printf("      >> 第一次握手：收到 SYN 客户端希望与我们建立连接\n");
-        printf("      >> 第二次握手: 开始构建 SYN + ACK 回复\n");
-
-        tcp -> sport = tcp -> dport;
-        tcp -> dport =  htons(src_port);
-        uint32_t second_ack = seq + 1;
-        tcp->ack = htonl(second_ack);
-        tcp->flag = TCP_ACK | TCP_SYN;
-        tcp->offset_res = (5 << 4);
-
-        uint32_t temp_ip = ip->dip;
-        ip->dip = ip->sip;
-        ip->sip = temp_ip;
-        ip->totallen = htons(sizeof(struct ip_hdr)+sizeof(struct tcp_hdr));
-
-        ip->checksum = 0;
-        ip->checksum = checksum(ip,sizeof(struct ip_hdr));
-
-        tcp->checksum = 0;
-        tcp->checksum = tcp_checksum(ip,tcp,sizeof(struct tcp_hdr));
-        if((write(fd,eth,sizeof(struct eth_hdr) + sizeof(struct ip_hdr) + sizeof(struct tcp_hdr)))<0){
-            perror("fail to send SYN ACK handshake package");
-        }
-        printf("      >> 已发送 SYN+ACK, 期待对方的 ACK...\n");
-    }
-    if(tcp->flag&TCP_ACK){
-        handle_tcp_data(fd, eth, ip, tcp);
-    }
-    if(tcp->flag&TCP_FIN){
-        handle_tcp_fin(fd,eth,ip,tcp);
+    if(write(fd,eth,sizeof(struct eth_hdr) + ntohs(ip->totallen))<0){
+        perror("fail to react fin");
     }
 }
+void handle_tcp(int fd,struct eth_hdr *eth,struct ip_hdr *ip,struct tcp_hdr *tcp){
+    uint32_t incoming_seq = ntohl(tcp->seq);
+    uint32_t incoming_ack = ntohl(tcp->ack);
+    int ip_hdr_len =(ip->version_ihl & 0x0f)*4;
+    int payload_len;
+    get_tcp_payloadlen(tcp,ntohs(ip->totallen),ip_hdr_len,&payload_len);
+
+    printf("  |---[TCP 状态机] 当前状态: %d ---\n", g_tcb.state);
+    switch(g_tcb.state){
+        case TCP_LISTEN:
+          if(tcp->flag&TCP_SYN &&!(tcp->flag&TCP_ACK)){
+            printf("      >>收到第一次握手数据包,开始初始化pcb并开始构建第二次握手数据包\n");
+            g_tcb.daddr = ip->dip;
+            g_tcb.saddr = ip->sip;
+            g_tcb.sport = tcp->sport;
+            g_tcb.dport = tcp->dport;
+            g_tcb.recv_next = incoming_seq +1;
+            g_tcb.send_next = 5658;
+            ip->totallen = htons(sizeof(struct ip_hdr) + sizeof(struct tcp_hdr));
+            tcp->flag = TCP_ACK|TCP_SYN;
+            tcp->seq = htonl(g_tcb.send_next);
+            tcp->ack = htonl(g_tcb.recv_next);
+            tcp->offset_res = (5<<4);
+            reply_tcp_packet(fd,eth,ip,tcp,0);
+            g_tcb.send_next++;
+            g_tcb.state = TCP_SYN_RCVD;
+            printf("      >> 状态切换 -> TCP_SYN_RCVD\n");
+          }
+          break;
+        case TCP_SYN_RCVD:
+          if(tcp->flag&TCP_ACK){
+            printf("      >>收到第三次次握手数据包,检验数据包并切换状态SYN_SENT\n");
+            if(incoming_ack == g_tcb.send_next){
+                printf("      >> [SYN_RCVD] 收到握手 ACK，连接建立！\n");
+                g_tcb.state = TCP_ESTABLISHED;
+            }
+          }
+          break;
+        case TCP_ESTABLISHED:
+          if(tcp->flag&(TCP_ACK)&&payload_len >0){
+            printf("      >> [ESTABLISHED] 收到数据 (%d bytes)\n", payload_len);
+            g_tcb.recv_next = incoming_seq + payload_len;
+
+            tcp->flag = TCP_ACK | TCP_PSH;
+            tcp->seq = htonl(g_tcb.send_next);
+            tcp->ack = htonl(g_tcb.recv_next);
+            reply_tcp_packet(fd,eth,ip,tcp,payload_len);
+            g_tcb.send_next += payload_len;
+            printf("      >> 数据已回显，更新 TCB 序列号\n");
+          }
+          if(tcp->flag&TCP_FIN){
+            printf("      >> [ESTABLISHED] 收到 FIN，开始挥手\n");
+            g_tcb.recv_next = incoming_seq +1;
+            tcp->seq = htonl(g_tcb.send_next);
+            tcp->ack = htonl(g_tcb.recv_next);
+            tcp->flag = TCP_ACK |TCP_FIN;
+            ip->totallen =htons(sizeof(struct ip_hdr)+sizeof(struct tcp_hdr));
+            tcp->offset_res = (5<<4);
+            reply_tcp_packet(fd,eth,ip,tcp,0);
+            g_tcb.send_next++;
+            g_tcb.state = TCP_LAST_ACK;      // 状态转移
+            printf("      >> 已连发 ACK 和 FIN+ACK，状态切换 -> TCP_LAST_ACK\n");
+          }
+          break;
+        case TCP_LAST_ACK:
+          if(tcp->flag & TCP_ACK && incoming_ack == g_tcb.send_next){
+            printf("      >> [LAST_ACK] 收到客户端的最终 ACK，挥手彻底完成，连接关闭！\n");
+            g_tcb.state = TCP_LISTEN; 
+            printf("      >> 状态切换 -> TCP_LISTEN (等待新连接)\n");
+          }
+          break;
+        default:
+          printf("      >> 未知或未处理的状态: %d\n", g_tcb.state);
+          break;
+
+    }
+
+}
+
+
+
+
 
 uint16_t tcp_checksum(struct ip_hdr *ip,struct tcp_hdr *tcp,int tcp_len){
     struct pre_header pre;
@@ -93,79 +150,3 @@ uint8_t* get_tcp_payloadlen(struct tcp_hdr *tcp, int total_ip_len, int ip_hdr_le
 }
 
 
-void handle_tcp_data(int fd,struct eth_hdr *eth, struct ip_hdr *ip,struct tcp_hdr *tcp){
-    int ip_hdr_len = ((ip->version_ihl&0x0f) *4);
-    int payload_len = 0;
-    uint8_t *payload = get_tcp_payloadlen(tcp,ntohs(ip->totallen),ip_hdr_len,&payload_len);
-    
-    if(payload_len >0){
-        printf("      >> 收到数据 (%d bytes): %.*s\n", payload_len, payload_len, payload);
-        uint8_t temp_mac[6];
-        memcpy(temp_mac,eth->dmac,6);
-        memcpy(eth->dmac,eth->smac,6);
-        memcpy(eth->smac,temp_mac,6);
-
-        uint32_t temp_ip;
-        temp_ip = ip->dip;
-        ip->dip = ip->sip;
-        ip->sip = temp_ip;
-        ip->checksum = 0;
-        ip->checksum = checksum(ip,ip_hdr_len);
-
-        uint16_t temp_port;
-        temp_port = tcp->dport;
-        tcp->dport = tcp->sport;
-        tcp->sport = temp_port;
-        uint32_t old_ack = ntohl(tcp->ack);
-        uint32_t old_seq = ntohl(tcp->seq);
-        tcp->ack = htonl(old_seq + payload_len);
-        tcp->seq = htonl(old_ack);
-        tcp->flag = TCP_PSH |TCP_ACK;
-        int tcp_total_len = ntohs(ip->totallen) - ip_hdr_len;
-        tcp->checksum = 0;
-        tcp->checksum = tcp_checksum(ip,tcp,tcp_total_len);
-
-        if((write(fd,eth,ntohs(ip->totallen)+sizeof(struct tcp_hdr)))<0){
-            perror("fail to respond tcp data package");
-        }
-        printf("      >> 已将数据回显\n");
-    }
-}
-void handle_tcp_fin(int fd,struct eth_hdr *eth, struct ip_hdr *ip,struct tcp_hdr *tcp){
-    printf("      >> 收到 FIN！对方请求断开连接。\n");
-    uint32_t incoming_seq = htonl(tcp->seq);
-    uint32_t incoming_ack = htonl(tcp->ack);
-
-    uint8_t temp_mac[6];
-    memcpy(temp_mac,eth->dmac,6);
-    memcpy(eth->dmac,eth->smac,6);
-    memcpy(eth->smac,temp_mac,6);
-
-    uint16_t temp_ip;
-    temp_ip = ip->dip;
-    ip->dip = ip->sip;
-    ip->sip = temp_ip;
-    ip->checksum = 0;
-    ip->checksum = checksum(ip,(ip->version_ihl&0x0f)*4);
-    
-    uint16_t temp_port = tcp->dport;
-    tcp->dport = tcp->sport;
-    tcp->sport = temp_port;
-    tcp->ack = htonl(incoming_seq+1);
-    tcp->seq = htonl(incoming_ack);
-    tcp->flag = TCP_ACK;
-    tcp->checksum = 0;
-    tcp->checksum = tcp_checksum(ip,tcp,sizeof(struct tcp_hdr));
-
-    if(write(fd,eth,sizeof(struct eth_hdr) + ntohs(ip->totallen))<0){
-        perror("fail to react fin");
-    }
-
-    tcp->checksum = 0;
-    tcp->checksum = tcp_checksum(ip,tcp,sizeof(struct tcp_hdr));
-
-   if(write(fd,eth,sizeof(struct eth_hdr) + ntohs(ip->totallen))<0){
-        perror("fail to react fin");
-    }
-    printf("      >> 已发送 FIN+ACK，进入 LAST_ACK 状态，等待对方最后的确认。\n");
-}
